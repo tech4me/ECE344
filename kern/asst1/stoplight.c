@@ -101,72 +101,72 @@ gostraight(unsigned long cardirection,
         message(0, carnumber, 0, 2);
 
         lock_acquire(inter_lock);
-        lock_acquire(NE_lock);
-        lock_acquire(SE_lock);
+        lock_acquire(NW_lock);
+        lock_acquire(SW_lock);
         lock_release(inter_lock);
         V(N_sem);
 
         message(1, carnumber, 0, 2);
 
         message(2, carnumber, 0, 2);
-        lock_release(NE_lock);
+        lock_release(NW_lock);
 
         message(4, carnumber, 0, 2);
-        lock_release(SE_lock);
+        lock_release(SW_lock);
     break;
 
     case 1: // East
         message(0, carnumber, 1, 3);
 
         lock_acquire(inter_lock);
-        lock_acquire(SE_lock);
-        lock_acquire(SW_lock);
+        lock_acquire(NE_lock);
+        lock_acquire(NW_lock);
         lock_release(inter_lock);
         V(E_sem);
 
         message(1, carnumber, 1, 3);
 
         message(2, carnumber, 1, 3);
-        lock_release(SE_lock);
+        lock_release(NE_lock);
 
         message(4, carnumber, 1, 3);
-        lock_release(SW_lock);
+        lock_release(NW_lock);
     break;
 
     case 2: // South
         message(0, carnumber, 2, 0);
 
         lock_acquire(inter_lock);
-        lock_acquire(SW_lock);
-        lock_acquire(NW_lock);
+        lock_acquire(SE_lock);
+        lock_acquire(NE_lock);
         lock_release(inter_lock);
         V(S_sem);
 
         message(1, carnumber, 2, 0);
 
         message(2, carnumber, 2, 0);
-        lock_release(SW_lock);
+        lock_release(SE_lock);
 
         message(4, carnumber, 2, 0);
-        lock_release(NW_lock);
+        lock_release(NE_lock);
     break;
 
     case 3: // West
         message(0, carnumber, 3, 1);
 
         lock_acquire(inter_lock);
-        lock_acquire(NW_lock);
-        lock_acquire(NE_lock);
+        lock_acquire(SW_lock);
+        lock_acquire(SE_lock);
         lock_release(inter_lock);
         V(W_sem);
 
         message(1, carnumber, 3, 1);
 
         message(2, carnumber, 3, 1);
-        lock_release(NW_lock);
+        lock_release(SW_lock);
 
         message(4, carnumber, 3, 1);
-        lock_release(NE_lock);
+        lock_release(SE_lock);
     break;
     }
 }
@@ -194,27 +194,93 @@ void
 turnleft(unsigned long cardirection,
      unsigned long carnumber)
 {
-    /*
-     * Avoid unused variable warnings.
-     */
-
-    (void) carnumber;
-
     switch (cardirection) {
     case 0: // North
+        message(0, carnumber, 0, 1);
 
+        lock_acquire(inter_lock);
+        lock_acquire(NW_lock);
+        lock_acquire(SW_lock);
+        lock_acquire(SE_lock);
+        lock_release(inter_lock);
+        V(N_sem);
+
+        message(1, carnumber, 0, 1);
+
+        message(2, carnumber, 0, 1);
+        lock_release(NW_lock);
+
+        message(3, carnumber, 0, 1);
+        lock_release(SW_lock);
+
+        message(4, carnumber, 0, 1);
+        lock_release(SE_lock);
     break;
 
     case 1: // East
+        message(0, carnumber, 1, 2);
 
+        lock_acquire(inter_lock);
+        lock_acquire(NE_lock);
+        lock_acquire(NW_lock);
+        lock_acquire(SW_lock);
+        lock_release(inter_lock);
+        V(E_sem);
+
+        message(1, carnumber, 1, 2);
+
+        message(2, carnumber, 1, 2);
+        lock_release(NE_lock);
+
+        message(3, carnumber, 1, 2);
+        lock_release(NW_lock);
+
+        message(4, carnumber, 1, 2);
+        lock_release(SW_lock);
     break;
 
     case 2: // South
+        message(0, carnumber, 2, 3);
 
+        lock_acquire(inter_lock);
+        lock_acquire(SE_lock);
+        lock_acquire(NE_lock);
+        lock_acquire(NW_lock);
+        lock_release(inter_lock);
+        V(S_sem);
+
+        message(1, carnumber, 2, 3);
+
+        message(2, carnumber, 2, 3);
+        lock_release(SE_lock);
+
+        message(3, carnumber, 2, 3);
+        lock_release(NE_lock);
+
+        message(4, carnumber, 2, 3);
+        lock_release(NW_lock);
     break;
 
     case 3: // West
+        message(0, carnumber, 3, 0);
 
+        lock_acquire(inter_lock);
+        lock_acquire(SW_lock);
+        lock_acquire(SE_lock);
+        lock_acquire(NE_lock);
+        lock_release(inter_lock);
+        V(W_sem);
+
+        message(1, carnumber, 3, 0);
+
+        message(2, carnumber, 3, 0);
+        lock_release(SW_lock);
+
+        message(3, carnumber, 3, 0);
+        lock_release(SE_lock);
+
+        message(4, carnumber, 3, 0);
+        lock_release(NE_lock);
     break;
     }
 
@@ -243,27 +309,61 @@ void
 turnright(unsigned long cardirection,
       unsigned long carnumber)
 {
-    /*
-     * Avoid unused variable warnings.
-     */
-
-    (void) carnumber;
-
     switch (cardirection) {
     case 0: // North
+        message(0, carnumber, 0, 3);
 
+        lock_acquire(inter_lock);
+        lock_acquire(NW_lock);
+        lock_release(inter_lock);
+        V(N_sem);
+
+        message(1, carnumber, 0, 3);
+
+        message(4, carnumber, 0, 3);
+        lock_release(NW_lock);
     break;
 
     case 1: // East
+        message(0, carnumber, 1, 0);
 
+        lock_acquire(inter_lock);
+        lock_acquire(NE_lock);
+        lock_release(inter_lock);
+        V(E_sem);
+
+        message(1, carnumber, 1, 0);
+
+        message(4, carnumber, 1, 0);
+        lock_release(NE_lock);
     break;
 
     case 2: // South
+        message(0, carnumber, 2, 1);
 
+        lock_acquire(inter_lock);
+        lock_acquire(SE_lock);
+        lock_release(inter_lock);
+        V(S_sem);
+
+        message(1, carnumber, 2, 1);
+
+        message(4, carnumber, 2, 1);
+        lock_release(SE_lock);
     break;
 
     case 3: // West
+        message(0, carnumber, 3, 2);
 
+        lock_acquire(inter_lock);
+        lock_acquire(SW_lock);
+        lock_release(inter_lock);
+        V(W_sem);
+
+        message(1, carnumber, 3, 2);
+
+        message(4, carnumber, 3, 2);
+        lock_release(SW_lock);
     break;
     }
 }
@@ -310,9 +410,7 @@ approachintersection(void * unusedpointer,
      */
 
     cardirection = random() % 4;
-    //cardirection = 2;
-    //carheading = random() % 3;
-    carheading = 0;
+    carheading = random() % 3;
 
     switch (cardirection) {
     case 0: // North
