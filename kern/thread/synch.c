@@ -249,3 +249,70 @@ cv_broadcast(struct cv *cv, struct lock *lock)
 
     splx(spl);
 }
+
+struct barrier *
+bar_create(const char *name, int thread_count)
+{
+    struct barrier *bar;
+
+    assert(thread_count >= 1);
+
+    bar = kmalloc(sizeof(struct barrier));
+    if (bar == NULL) {
+        return NULL;
+    }
+
+    bar->name = kstrdup(name);
+    if (bar->name == NULL) {
+        kfree(bar);
+        return NULL;
+    }
+
+    bar->n = thread_count;
+    bar->count = 0;
+    bar->mutex = sem_create("barrier_mutex", 1);
+    bar->turnstile1 = sem_create("barrier_turnstile1", 0);
+    bar->turnstile2 = sem_create("barrier_turnstile2", 0);
+    if (bar->mutex == NULL || bar->turnstile1 == NULL || bar->turnstile2 == NULL)
+        return NULL;
+    return bar;
+}
+
+void
+bar_wait(struct barrier *bar)
+{
+    int i;
+    // Phase1 begin
+    P(bar->mutex);
+    bar->count++;
+    if (bar->count == bar->n) {
+        for (i = 0; i < bar->n; i++)
+            V(bar->turnstile1);
+    }
+    V(bar->mutex);
+    P(bar->turnstile1);
+    // Phase1 end
+
+    // Phase2 begin
+    P(bar->mutex);
+    bar->count--;
+    if (bar->count == 0) {
+        for (i = 0; i < bar->n; i++)
+            V(bar->turnstile2);
+    }
+    V(bar->mutex);
+    P(bar->turnstile2);
+    // Phase2 end
+}
+
+void
+bar_destroy(struct barrier *bar)
+{
+    assert(bar != NULL);
+
+    kfree(bar->name);
+    sem_destroy(bar->mutex);
+    sem_destroy(bar->turnstile1);
+    sem_destroy(bar->turnstile2);
+    kfree(bar);
+}

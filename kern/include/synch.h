@@ -89,8 +89,6 @@ void         lock_destroy(struct lock *);
 
 struct cv {
     char *name;
-    // add what you need here
-    // (don't forget to mark things volatile as needed)
 };
 
 struct cv *cv_create(const char *name);
@@ -98,5 +96,19 @@ void       cv_wait(struct cv *cv, struct lock *lock);
 void       cv_signal(struct cv *cv, struct lock *lock);
 void       cv_broadcast(struct cv *cv, struct lock *lock);
 void       cv_destroy(struct cv *);
+
+// Two phase barrier with preload
+struct barrier {
+    char *name;
+    int n;
+    int count;
+    struct semaphore *mutex;
+    struct semaphore *turnstile1;
+    struct semaphore *turnstile2;
+};
+
+struct barrier *bar_create(const char *name, int thread_count);
+void            bar_wait(struct barrier *bar);
+void            bar_destroy(struct barrier *bar);
 
 #endif /* _SYNCH_H_ */
