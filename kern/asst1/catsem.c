@@ -245,6 +245,12 @@ catmousesem(int nargs,
 
     (void) nargs;
     (void) args;
+    for(index = 0; index < NFOODBOWLS; index++)
+        food_state[index] = 0;
+    for(index = 0; index < NCATS; index++)
+        cats_iteration_count[index] = 0;
+    for(index = 0; index < NMICE; index++)
+        mice_iteration_count[index] = 0;
 
     thread_sem = sem_create("Thread Join", 0);
     if (thread_sem == NULL)

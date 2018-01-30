@@ -141,7 +141,7 @@ lock_acquire(struct lock *lock)
     int spl;
     spl = splhigh();
 
-    while(lock->flag == 1)
+    while (lock->flag == 1)
         thread_sleep(lock);
 
     lock->flag = 1;
