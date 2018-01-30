@@ -36,6 +36,37 @@ getinterval(time_t s1, u_int32_t ns1, time_t s2, u_int32_t ns2,
 	*rs = s2 - s1;
 }
 
+/*
+ * Command for changing the debug flags.
+ */
+static
+int
+cmd_dbflags(int nargs, char **arg)
+{
+    if (nargs != 3)
+        goto error_df;
+
+    unsigned int mask = 1;
+    int flag_num = atoi(arg[1]);
+
+    if (flag_num < 1 || flag_num > 12)
+        goto error_df;
+
+    mask <<= (flag_num - 1);
+    if (!strcmp(arg[2], "on")) {
+        dbflags |= mask;
+        goto no_error_df;
+    } else if(!strcmp(arg[2], "off")) {
+        mask = ~mask;
+        dbflags &= mask;
+        goto no_error_df;
+    }
+error_df:
+    kprintf("Usage: df nr on/off\n");
+no_error_df:
+    return 0;
+}
+
 ////////////////////////////////////////////////////////////
 //
 // Command menu functions 
@@ -381,9 +412,38 @@ showmenu(const char *name, const char *x[])
 	kprintf("\n");
 }
 
+static const char *dbflagsmenu[] = {
+	"[df 1 on/off]        DB_LOCORE      ",
+    "[df 2 on/off]        DB_SYSCALL     ",
+    "[df 3 on/off]        DB_INTERRUPT   ",
+    "[df 4 on/off]        DB_DEVICE      ",
+    "[df 5 on/off]        DB_THREADS     ",
+    "[df 6 on/off]        DB_VM          ",
+    "[df 7 on/off]        DB_EXEC        ",
+    "[df 8 on/off]        DB_VFS         ",
+    "[df 9 on/off]        DB_SFS         ",
+    "[df 10 on/off]       DB_NET         ",
+    "[df 11 on/off]       DB_NETFS       ",
+    "[df 12 on/off]       DB_KMALLOC     ",
+    NULL
+};
+
+static
+int
+cmd_dbflagsmenu(int n, char **a)
+{
+	(void)n;
+	(void)a;
+
+    showmenu("OS/161 Debug flags", dbflagsmenu);
+    kprintf("Current value of dbflags is %#x\n", dbflags);
+    return 0;
+}
+
 static const char *opsmenu[] = {
 	"[s]       Shell                     ",
 	"[p]       Other program             ",
+    "[dbflags] Debug flags               ",
 	"[mount]   Mount a filesystem        ",
 	"[unmount] Unmount a filesystem      ",
 	"[bootfs]  Set \"boot\" filesystem     ",
@@ -500,6 +560,10 @@ static struct {
 	{ "q",		cmd_quit },
 	{ "exit",	cmd_quit },
 	{ "halt",	cmd_quit },
+
+    /* dbflags */
+    { "df", cmd_dbflags },
+    { "dbflags", cmd_dbflagsmenu },
 
 #if OPT_SYNCHPROBS
 	/* in-kernel synchronization problems */
