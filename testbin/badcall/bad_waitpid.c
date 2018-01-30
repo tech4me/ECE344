@@ -96,7 +96,7 @@ wait_self(void)
 {
 	int rv, x;
 	rv = waitpid(getpid(), &x, 0);
-	report_survival(rv, errno, "wait for self");
+    report_test(rv, errno, EINVAL, "wait for self");
 }
 
 static
@@ -114,7 +114,7 @@ wait_parent(void)
 	if (childpid==0) {
 		/* Child. Wait for parent. */
 		rv = waitpid(mypid, &x, 0);
-		report_survival(rv, errno, "wait for parent (from child)");
+        report_test(rv, errno, EINVAL, "wait for parent (from child)");
 		_exit(0);
 	}
 	rv = waitpid(childpid, &x, 0);
@@ -255,5 +255,8 @@ test_waitpid(void)
 
 	wait_self();
 	wait_parent();
-	wait_siblings();
+	
+	// (jsun): in ece344 we do not implement lseek so this test is not 
+	// possible without some form of interprocess communication
+	(void)wait_siblings;
 }

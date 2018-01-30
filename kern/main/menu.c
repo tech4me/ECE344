@@ -17,6 +17,7 @@
 #include "opt-synchprobs.h"
 #include "opt-sfs.h"
 #include "opt-net.h"
+#include "opt-dumbsynch.h"
 
 #define _PATH_SHELL "/bin/sh"
 
@@ -109,6 +110,10 @@ common_prog(int nargs, char **args)
 		kprintf("thread_fork failed: %s\n", strerror(result));
 		return result;
 	}
+
+#if OPT_DUMBSYNCH
+	clocksleep(5);
+#endif
 
 	return 0;
 }

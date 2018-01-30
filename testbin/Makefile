@@ -4,46 +4,25 @@
 
 include ../defs.mk
 
-all depend tags clean install:
-	(cd add && $(MAKE) $@)
-	(cd argtest && $(MAKE) $@)
-	(cd badcall && $(MAKE) $@)
-	(cd bigfile && $(MAKE) $@)
-	(cd conman && $(MAKE) $@)
-	(cd crash && $(MAKE) $@)
-	(cd ctest && $(MAKE) $@)
-	(cd dirconc && $(MAKE) $@)
-	(cd dirseek && $(MAKE) $@)
-	(cd dirtest && $(MAKE) $@)
-	(cd f_test && $(MAKE) $@)
-	(cd farm && $(MAKE) $@)
-	(cd faulter && $(MAKE) $@)
-	(cd filetest && $(MAKE) $@)
-	(cd forkbomb && $(MAKE) $@)
-	(cd forktest && $(MAKE) $@)
-	(cd guzzle && $(MAKE) $@)
-	(cd hash && $(MAKE) $@)
-	(cd hog && $(MAKE) $@)
-	(cd huge && $(MAKE) $@)
-	(cd kitchen && $(MAKE) $@)
-	(cd matmult && $(MAKE) $@)
-	(cd palin && $(MAKE) $@)
-	(cd parallelvm && $(MAKE) $@)
-	(cd randcall && $(MAKE) $@)
-	(cd rmdirtest && $(MAKE) $@)
-	(cd rmtest && $(MAKE) $@)
-	(cd sink && $(MAKE) $@)
-	(cd sort && $(MAKE) $@)
-	(cd sty && $(MAKE) $@)
-	(cd tail && $(MAKE) $@)
-	(cd tictac && $(MAKE) $@)
-	(cd triplehuge && $(MAKE) $@)
-	(cd triplemat && $(MAKE) $@)
-	(cd triplesort && $(MAKE) $@)
-	(cd malloctest && $(MAKE) $@)
-	(cd forkexecbomb && $(MAKE) $@)
-	(cd stacktest && $(MAKE) $@)
+# specify exclusion here
+EXCLUDES:=
 
-# But not:
-#    malloctest     (no malloc/free until you write it)
-#    userthreads    (no support in kernel API in base system)
+PROGS:=$(filter-out $(EXCLUDES), $(subst /,,$(wildcard */)))
+PROGS_ALL:=$(addsuffix .all,$(PROGS))
+PROGS_DEPEND:=$(addsuffix .depend,$(PROGS))
+PROGS_TAGS:=$(addsuffix .tags,$(PROGS))
+PROGS_CLEAN:=$(addsuffix .clean,$(PROGS))
+PROGS_INSTALL:=$(addsuffix .install,$(PROGS))
+
+all: $(PROGS_ALL)
+tags: $(PROGS_TAGS)
+depend: $(PROGS_DEPEND)
+clean: $(PROGS_CLEAN)
+install: $(PROGS_INSTALL)
+
+$(PROGS_ALL) $(PROGS_TAGS) $(PROGS_DEPEND) $(PROGS_CLEAN) $(PROGS_INSTALL):
+	cd $(basename $@) && $(MAKE) $(subst .,,$(suffix $@))
+	
+.PHONY: all depend tags clean install $(PROGS_ALL) $(PROGS_DEPEND) \
+	$(PROGS_TAGS) $(PROGS_CLEAN) $(PROGS_INSTALL)
+
