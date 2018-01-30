@@ -314,7 +314,7 @@ catmousesem(int nargs,
         }
     }
 
-    // Only destory semaphores when all threads finish their jobs
+    // Only destroy semaphores when all threads finish their jobs
     for (index = 0; index < (NCATS + NMICE); index++)
         P(thread_sem);
     sem_destroy(food_state_sem);
