@@ -384,6 +384,7 @@ file      main/hello.c
 
 file      userprog/loadelf.c
 file      userprog/runprogram.c
+file      userprog/syscall_impl.c
 file      userprog/uio.c
 
 #
