@@ -7,6 +7,7 @@
 void hello()
 {
     int ret;
-    sys_read(10, NULL, 0, ret);
+    char a;
+    //sys_read(0, &a, 1, ret);
     kprintf("Hello World\n");
 }

@@ -69,7 +69,10 @@ mips_syscall(struct trapframe *tf)
 
     switch (callno) {
         case SYS_read:
-        err = sys_read((int)tf->tf_a0, (void*)tf->tf_a1, (size_t)tf->tf_a2, &retval); 
+        err = sys_read((int)tf->tf_a0, (void*)tf->tf_a1, (size_t)tf->tf_a2, &retval);
+        break;
+        case SYS_write:
+        err = sys_write((int)tf->tf_a0, (void*)tf->tf_a1, (size_t)tf->tf_a2, &retval);
         break;
         case SYS_reboot:
         err = sys_reboot(tf->tf_a0);
