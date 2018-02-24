@@ -68,6 +68,9 @@ mips_syscall(struct trapframe *tf)
     retval = 0;
 
     switch (callno) {
+        case SYS_fork:
+        err = sys_fork(&retval);
+        break;
         case SYS_read:
         err = sys_read((int)tf->tf_a0, (void*)tf->tf_a1, (size_t)tf->tf_a2, &retval);
         break;
@@ -114,12 +117,13 @@ mips_syscall(struct trapframe *tf)
 void
 md_forkentry(struct trapframe *tf)
 {
-    /*
-     * This function is provided as a reminder. You need to write
-     * both it and the code that calls it.
-     *
-     * Thus, you can trash it and do things another way if you prefer.
-     */
+    struct trapframe child_tf;
+    tf->tf_a3 = 0; // System call return flag
+    tf->tf_v0 = 0; // Return 0 for the child process
+    tf->tf_epc += 4; // Start to execute after fork()
+    child_tf = *tf;
+    mips_usermode(&child_tf);
 
-    (void)tf;
+    // Should never reach here
+    panic("Switch to usermode failed!");
 }

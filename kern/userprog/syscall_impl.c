@@ -3,6 +3,16 @@
 #include <kern/errno.h>
 #include <kern/unistd.h>
 #include <syscall.h>
+#include <thread.h>
+
+int
+sys_fork(pid_t *retval)
+{
+    kprintf("In syscall fork\n");
+    //thread_fork("child", );
+    *retval = 100;
+    return 0;
+}
 
 int
 sys_read(int fd, void *buf, size_t buflen, int *retval)
@@ -31,8 +41,8 @@ sys_read(int fd, void *buf, size_t buflen, int *retval)
 int
 sys_write(int fd, const void *buf, size_t nbytes, int *retval)
 {
-    if (fd != STDOUT_FILENO) {
-        kprintf("Right now write system call only support write to STDOUT\n");
+    if (fd != STDOUT_FILENO && fd != STDERR_FILENO) {
+        kprintf("Right now write system call only support write to STDOUT and STDERR\n");
         *retval = -1;
         return EBADF;
     }

@@ -8,14 +8,15 @@
 /* Get machine-dependent stuff */
 #include <machine/pcb.h>
 
-
+struct process;
 struct addrspace;
 
 struct thread {
 	/**********************************************************/
 	/* Private thread members - internal to the thread system */
 	/**********************************************************/
-	
+
+    struct process *p_process;
 	struct pcb t_pcb;
 	char *t_name;
 	const void *t_sleepaddr;

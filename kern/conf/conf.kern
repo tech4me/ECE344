@@ -365,6 +365,8 @@ file      thread/hardclock.c
 file      thread/synch.c
 file      thread/scheduler.c
 file      thread/thread.c
+file      thread/process.c
+
 # menu synchronization with clocksleep
 defoption dumbsynch
 
