@@ -8,36 +8,36 @@
 /* Get machine-dependent stuff */
 #include <machine/pcb.h>
 
-struct process;
 struct addrspace;
+struct process;
 
 struct thread {
-	/**********************************************************/
-	/* Private thread members - internal to the thread system */
-	/**********************************************************/
+    /**********************************************************/
+    /* Private thread members - internal to the thread system */
+    /**********************************************************/
 
     struct process *p_process;
-	struct pcb t_pcb;
-	char *t_name;
-	const void *t_sleepaddr;
-	char *t_stack;
-	
-	/**********************************************************/
-	/* Public thread members - can be used by other code      */
-	/**********************************************************/
-	
-	/*
-	 * This is public because it isn't part of the thread system,
-	 * and will need to be manipulated by the userprog and/or vm
-	 * code.
-	 */
-	struct addrspace *t_vmspace;
+    struct pcb t_pcb;
+    char *t_name;
+    const void *t_sleepaddr;
+    char *t_stack;
 
-	/*
-	 * This is public because it isn't part of the thread system,
-	 * and is manipulated by the virtual filesystem (VFS) code.
-	 */
-	struct vnode *t_cwd;
+    /**********************************************************/
+    /* Public thread members - can be used by other code      */
+    /**********************************************************/
+
+    /*
+     * This is public because it isn't part of the thread system,
+     * and will need to be manipulated by the userprog and/or vm
+     * code.
+     */
+    struct addrspace *t_vmspace;
+
+    /*
+     * This is public because it isn't part of the thread system,
+     * and is manipulated by the virtual filesystem (VFS) code.
+     */
+    struct vnode *t_cwd;
 };
 
 /* Call once during startup to allocate data structures. */
@@ -59,10 +59,10 @@ void thread_shutdown(void);
  * general the child thread might exit at any time.) Returns an error
  * code.
  */
-int thread_fork(const char *name, 
-		void *data1, unsigned long data2, 
-		void (*func)(void *, unsigned long),
-		struct thread **ret);
+int thread_fork(const char *name,
+        void *data1, unsigned long data2,
+        void (*func)(void *, unsigned long),
+        struct thread **ret);
 
 /*
  * Cause the current thread to exit.
@@ -103,8 +103,8 @@ int thread_hassleepers(const void *addr);
  */
 
 /* Machine independent entry point for new threads. */
-void mi_threadstart(void *data1, unsigned long data2, 
-		    void (*func)(void *, unsigned long));
+void mi_threadstart(void *data1, unsigned long data2,
+            void (*func)(void *, unsigned long));
 
 /* Machine dependent context switch. */
 void md_switch(struct pcb *old, struct pcb *nu);

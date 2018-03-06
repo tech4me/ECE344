@@ -148,6 +148,7 @@ common_prog(int nargs, char **args)
 
     // Waitpid, block until child process terminates
     // TODO
+	clocksleep(5);
 
 	return 0;
 }

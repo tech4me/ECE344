@@ -8,7 +8,6 @@
 #include <machine/spl.h>
 #include <machine/pcb.h>
 #include <thread.h>
-#include <process.h>
 #include <curthread.h>
 #include <scheduler.h>
 #include <addrspace.h>
@@ -35,9 +34,6 @@ static struct array *zombies;
 /* Total number of outstanding threads. Does not count zombies[]. */
 static int numthreads;
 
-/* An array of process*/
-static struct array *process_table;
-
 /*
  * Create a thread. This is used both to create the first thread's
  * thread structure and to create subsequent threads.
@@ -63,35 +59,11 @@ thread_create(const char *name)
 
     thread->t_cwd = NULL;
 
-    struct process *process = kmalloc(sizeof(struct process));
+    struct process *process = process_create(thread);
     if (process==NULL) {
-        kfree(thread);
         kfree(thread->t_name);
-        return NULL;
-    }
-
-    thread->p_process = process;
-
-    pid_t new_pid = allocate_pid();
-    if (new_pid == 0) {
         kfree(thread);
-        kfree(thread->t_name);
-        kfree(process);
-        return NULL;
-    } else if (new_pid == 1) {
-        process->pid = 1;
-        process->ppid = 0;
-        process->exited_flag = 0;
-        process->exit_code = -1;
-        process->p_thread = thread;
-        return thread;
     }
-
-    process->pid = new_pid;
-    process->ppid = curthread->p_process->pid;
-    process->exited_flag = 0;
-    process->exit_code = -1;
-    process->p_thread = thread;
 
     return thread;
 }
@@ -107,9 +79,6 @@ void
 thread_destroy(struct thread *thread)
 {
     assert(thread != curthread);
-
-    // If you add things to the thread structure, be sure to dispose of
-    // them here or in thread_exit.
 
     // These things are cleaned up in thread_exit.
     assert(thread->t_vmspace==NULL);
@@ -139,6 +108,7 @@ exorcise(void)
     for (i=0; i<array_getnum(zombies); i++) {
         struct thread *z = array_getguy(zombies, i);
         assert(z!=curthread);
+        process_destroy(z->p_process);
         thread_destroy(z);
     }
     result = array_setsize(zombies, 0);
@@ -213,10 +183,7 @@ thread_bootstrap(void)
         panic("Cannot create zombies array\n");
     }
 
-    process_table = array_create();
-    if (process_table==NULL) {
-        panic("Cannot create process table array\n");
-    }
+    process_bootstrap();
 
     /*
      * Create the thread structure for the first thread
@@ -255,8 +222,7 @@ thread_shutdown(void)
     sleepers = NULL;
     array_destroy(zombies);
     zombies = NULL;
-    array_destroy(process_table);
-    process_table = NULL;
+    process_shutdown();
     // Don't do this - it frees our stack and we blow up
     //thread_destroy(curthread);
 }

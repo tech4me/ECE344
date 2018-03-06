@@ -4,13 +4,27 @@
 #include <kern/unistd.h>
 #include <syscall.h>
 #include <thread.h>
+#include <curthread.h>
+#include <process.h>
 
 int
-sys_fork(pid_t *retval)
+sys__exit(int exitcode)
 {
-    kprintf("In syscall fork\n");
-    //thread_fork("child", );
-    *retval = 100;
+    process_exit(exitcode);
+    panic("Process exit failed!");
+    return 0;
+}
+
+int
+sys_fork(struct trapframe *tf, pid_t *retval)
+{
+    pid_t child_pid;
+    int fork_result = process_fork("child_process", tf, &child_pid);
+    if (fork_result) { // Fork resulted non-zero, fork failed
+        *retval = 0;
+        return fork_result;
+    }
+    *retval = child_pid;
     return 0;
 }
 
@@ -18,12 +32,12 @@ int
 sys_read(int fd, void *buf, size_t buflen, int *retval)
 {
     if (fd != STDIN_FILENO) {
-        kprintf("Right now read system call only support read from STDIN\n");
+        //kprintf("Right now read system call only support read from STDIN\n");
         *retval = -1;
         return EBADF;
     }
     if (buflen != 1) {
-        kprintf("Right now read system call only support read one character\n");
+        //kprintf("Right now read system call only support read one character\n");
         *retval = -1;
         return EUNIMP;
     }
@@ -42,7 +56,7 @@ int
 sys_write(int fd, const void *buf, size_t nbytes, int *retval)
 {
     if (fd != STDOUT_FILENO && fd != STDERR_FILENO) {
-        kprintf("Right now write system call only support write to STDOUT and STDERR\n");
+        //kprintf("Right now write system call only support write to STDOUT and STDERR\n");
         *retval = -1;
         return EBADF;
     }
@@ -56,5 +70,12 @@ sys_write(int fd, const void *buf, size_t nbytes, int *retval)
     kprintf("%s", kern_buf);
     kfree(kern_buf);
     *retval = nbytes;
+    return 0;
+}
+
+int
+sys_getpid(pid_t *retval)
+{
+    *retval = curthread->p_process->pid;
     return 0;
 }

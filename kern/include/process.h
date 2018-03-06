@@ -2,7 +2,6 @@
 #define _PROCESS_H_
 
 #include <types.h>
-#include <array.h>
 #include <thread.h>
 
 struct process {
@@ -13,7 +12,22 @@ struct process {
     struct thread* p_thread;
 };
 
-// Get a pid return 0 if no pid can be allocated
-pid_t allocate_pid();
+// Boot process start sequence
+void process_bootstrap(void);
+
+// Helper to create new process
+struct process * process_create(struct thread *thread);
+
+// Process exit, change status and save return value
+void process_exit(int exit_code);
+
+// Remove signle process structure
+void process_destroy(struct process *process);
+
+// Completely stop processes
+void process_shutdown(void);
+
+// Helper function to fork process
+int process_fork(const char *name, struct trapframe *tf, pid_t *child_pid);
 
 #endif

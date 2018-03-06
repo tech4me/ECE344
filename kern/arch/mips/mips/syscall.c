@@ -4,8 +4,11 @@
 #include <machine/pcb.h>
 #include <machine/spl.h>
 #include <machine/trapframe.h>
+#include <addrspace.h>
 #include <kern/callno.h>
 #include <syscall.h>
+#include <thread.h>
+#include <curthread.h>
 
 
 /*
@@ -68,8 +71,11 @@ mips_syscall(struct trapframe *tf)
     retval = 0;
 
     switch (callno) {
+        case SYS__exit:
+        err = sys__exit((int)tf->tf_a0);
+        break;
         case SYS_fork:
-        err = sys_fork(&retval);
+        err = sys_fork(tf, &retval);
         break;
         case SYS_read:
         err = sys_read((int)tf->tf_a0, (void*)tf->tf_a1, (size_t)tf->tf_a2, &retval);
@@ -79,6 +85,9 @@ mips_syscall(struct trapframe *tf)
         break;
         case SYS_reboot:
         err = sys_reboot(tf->tf_a0);
+        break;
+        case SYS_getpid:
+        err = sys_getpid(&retval);
         break;
 
         default:
@@ -115,14 +124,22 @@ mips_syscall(struct trapframe *tf)
 }
 
 void
-md_forkentry(struct trapframe *tf)
+md_forkentry(void *tf, unsigned long addrspace)
 {
+    struct trapframe *p_tf = (struct trapframe *)tf;
+    struct addrspace *p_addrspace = (struct addrspace *)addrspace;
     struct trapframe child_tf;
-    tf->tf_a3 = 0; // System call return flag
-    tf->tf_v0 = 0; // Return 0 for the child process
-    tf->tf_epc += 4; // Start to execute after fork()
-    child_tf = *tf;
-    mips_usermode(&child_tf);
+
+    p_tf->tf_a3 = 0; // System call return flag
+    p_tf->tf_v0 = 0; // Return 0 for the child process
+    p_tf->tf_epc += 4; // Start to execute after fork()
+    child_tf = *p_tf;
+
+    // Set the child's address space
+    curthread->t_vmspace = p_addrspace;
+    as_activate(curthread->t_vmspace);
+
+    mips_usermode(&child_tf); // Use a copy on kernel stack as requested
 
     // Should never reach here
     panic("Switch to usermode failed!");
