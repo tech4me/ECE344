@@ -42,7 +42,7 @@ sys_read(int fd, void *buf, size_t buflen, int *retval)
         return EUNIMP;
     }
     char temp = getch();
-    int err = copyout(&temp, buf, buflen);
+    int err = copyout((const void *)&temp, (userptr_t)buf, buflen);
     if (err) {
         *retval = -1;
         return err;
@@ -61,7 +61,7 @@ sys_write(int fd, const void *buf, size_t nbytes, int *retval)
         return EBADF;
     }
     char *kern_buf = (char*)kmalloc(sizeof(char) * (nbytes + 1)); // Additional space for NULL at the end
-    int err = copyin(buf, kern_buf, nbytes);
+    int err = copyin((const_userptr_t)buf, (void *)kern_buf, nbytes);
     if (err) {
         *retval = -1;
         return err;
