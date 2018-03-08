@@ -9,6 +9,7 @@
 #include <lib.h>
 #include <clock.h>
 #include <thread.h>
+#include <process.h>
 #include <syscall.h>
 #include <uio.h>
 #include <vfs.h>
@@ -130,9 +131,10 @@ common_prog(int nargs, char **args)
         "synchronization-problems kernel.\n");
 #endif
 
+    struct thread *thread;
     result = thread_fork(args[0] /* thread name */,
             args /* thread arg */, nargs /* thread arg */,
-            cmd_progthread, NULL);
+            cmd_progthread, &thread);
     if (result) {
         kprintf("thread_fork failed: %s\n", strerror(result));
         return result;
@@ -142,9 +144,9 @@ common_prog(int nargs, char **args)
     clocksleep(5);
 #endif
 
-    // Waitpid, block until child process terminates
-    // TODO
-    clocksleep(5);
+    int status;
+    process_wait(thread->p_process->pid, &status);
+    assert(!status); // Wait for child process fail, should not happen
 
     return 0;
 }

@@ -29,6 +29,28 @@ sys_fork(struct trapframe *tf, pid_t *retval)
 }
 
 int
+sys_waitpid(pid_t pid, int *status, int options, pid_t *retval)
+{
+    *retval = pid; // Waitpid success return the pid that we were waiting for
+    if (options != 0) { // Check options
+        *retval = -1;
+        return EUNIMP;
+    }
+    int wait_status;
+    int exit_code = process_wait(pid, &wait_status);
+    if (wait_status) {
+        *retval = -1;
+        return wait_status;
+    }
+    int err = copyout((const void *)&exit_code, (userptr_t)status, sizeof(int));
+    if (err) {
+        *retval = -1;
+        return err;
+    }
+    return 0;
+}
+
+int
 sys_read(int fd, void *buf, size_t buflen, int *retval)
 {
     if (fd != STDIN_FILENO) {

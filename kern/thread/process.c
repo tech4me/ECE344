@@ -61,6 +61,12 @@ process_create(struct thread * thread)
     process->exited_flag = 0;
     process->exit_code = -1;
     process->p_thread = thread;
+    struct semaphore *sem = sem_create("sem_exit", 0);
+    if (sem == NULL) {
+        kfree(process);
+        return NULL;
+    }
+    process->sem_exit = sem;
 
     if (array_add(process_table, process)) {
         kfree(process);
@@ -73,9 +79,25 @@ process_create(struct thread * thread)
 void
 process_exit(int exit_code)
 {
-    thread_exit();
+    splhigh(); // Disable interrupt, the exit procedure should not be interleaved
     curthread->p_process->exited_flag = 1; // Process exited
     curthread->p_process->exit_code = exit_code;
+    curthread->p_process->p_thread = NULL;
+
+    // Now all the child process will be orphant, we need to adopt them
+    // Search through the process table, change all children's ppid
+    int i;
+    for (i = 0; i < array_getnum(process_table); i++) {
+        struct process * process = array_getguy(process_table, i);
+        if (process->ppid == curthread->p_process->pid) { // We found a child here, it should be a orphant now
+            process->ppid = 1; // Now the init(boot/menu) process should adopt the child process
+        }
+    }
+
+    V(curthread->p_process->sem_exit); // Now signal processes which are waiting
+
+    // Now exit the thread
+    thread_exit();
 }
 
 void
@@ -118,4 +140,31 @@ process_fork(const char *name, struct trapframe *tf, pid_t *child_pid)
     }
     *child_pid = child_thread->p_process->pid;
     return 0;
+}
+
+int
+process_wait(pid_t pid, int *status)
+{
+    int spl = splhigh();
+    int return_val = 0;
+    if (pid <= 0 || pid > array_getnum(process_table)) {
+        *status = EINVAL;
+        return_val = 0;
+        goto done_wait;
+    }
+    struct process *process = array_getguy(process_table, pid - 1);
+    if (process->exited_flag) {
+        *status = 0;
+        return_val = process->exit_code;
+        goto done_wait;
+    } else {
+        // Now we need to put the current process into sleep until the process that we are waiting for exits
+        P(process->sem_exit);
+        *status = 0;
+        return_val = process->exit_code;
+    }
+
+    done_wait:
+    splx(spl);
+    return return_val;
 }

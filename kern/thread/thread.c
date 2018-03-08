@@ -9,6 +9,7 @@
 #include <machine/pcb.h>
 #include <thread.h>
 #include <curthread.h>
+#include <process.h>
 #include <scheduler.h>
 #include <addrspace.h>
 #include <vnode.h>
@@ -108,8 +109,11 @@ exorcise(void)
     for (i=0; i<array_getnum(zombies); i++) {
         struct thread *z = array_getguy(zombies, i);
         assert(z!=curthread);
-        process_destroy(z->p_process);
-        thread_destroy(z);
+        // We are init(boot/menu) we only reap our child
+        if (z->p_process->pid == 1) {
+            process_destroy(z->p_process);
+            thread_destroy(z);
+        }
     }
     result = array_setsize(zombies, 0);
     /* Shrinking the array; not supposed to be able to fail. */
