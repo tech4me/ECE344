@@ -89,7 +89,7 @@ process_exit(int exit_code)
     int i;
     for (i = 0; i < array_getnum(process_table); i++) {
         struct process * process = array_getguy(process_table, i);
-        if (process->ppid == curthread->p_process->pid) { // We found a child here, it should be a orphant now
+        if (process != NULL && process->ppid == curthread->p_process->pid) { // We found a child here, it should be a orphant now
             process->ppid = 1; // Now the init(boot/menu) process should adopt the child process
         }
     }
@@ -103,8 +103,11 @@ process_exit(int exit_code)
 void
 process_destroy(struct process *process)
 {
+    assert(curspl>0); // Interrupt should be off here
     assert(process != curthread->p_process);
+    pid_t pid = process->pid;
     kfree(process);
+    array_setguy(process_table, pid - 1, NULL);
 }
 
 void
@@ -153,16 +156,29 @@ process_wait(pid_t pid, int *status)
         goto done_wait;
     }
     struct process *process = array_getguy(process_table, pid - 1);
+    if (process == NULL) { // Here either the process was never used or already reaped
+        *status = EINVAL;
+        return_val = 0;
+        goto done_wait;
+    }
+    if (process->ppid != curthread->p_process->pid) { // waitpid can only be used on process's children
+        *status = EINVAL;
+        return_val = 0;
+        goto done_wait;
+    }
     if (process->exited_flag) {
         *status = 0;
         return_val = process->exit_code;
-        goto done_wait;
     } else {
         // Now we need to put the current process into sleep until the process that we are waiting for exits
         P(process->sem_exit);
         *status = 0;
         return_val = process->exit_code;
     }
+
+    // Reap the child process
+    kfree(process);
+    array_setguy(process_table, pid - 1, NULL);
 
     done_wait:
     splx(spl);

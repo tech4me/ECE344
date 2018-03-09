@@ -34,7 +34,7 @@ sys_waitpid(pid_t pid, int *status, int options, pid_t *retval)
     *retval = pid; // Waitpid success return the pid that we were waiting for
     if (options != 0) { // Check options
         *retval = -1;
-        return EUNIMP;
+        return EINVAL;
     }
     int wait_status;
     int exit_code = process_wait(pid, &wait_status);
