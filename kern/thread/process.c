@@ -10,6 +10,7 @@
 #define PREALLOCATE_PROCESS 32
 
 extern struct thread *curthread;
+extern struct array *zombies;
 
 static pid_t pid_counter = 1;
 
@@ -58,6 +59,7 @@ process_create(struct thread * thread)
     } else {
         process->ppid = curthread->p_process->pid;
     }
+    process->adopted_flag = 0;
     process->exited_flag = 0;
     process->exit_code = -1;
     process->p_thread = thread;
@@ -70,6 +72,7 @@ process_create(struct thread * thread)
 
     if (array_add(process_table, process)) {
         kfree(process);
+        kfree(sem);
         return NULL;
     }
 
@@ -82,7 +85,6 @@ process_exit(int exit_code)
     splhigh(); // Disable interrupt, the exit procedure should not be interleaved
     curthread->p_process->exited_flag = 1; // Process exited
     curthread->p_process->exit_code = exit_code;
-    curthread->p_process->p_thread = NULL;
 
     // Now all the child process will be orphant, we need to adopt them
     // Search through the process table, change all children's ppid
@@ -91,6 +93,7 @@ process_exit(int exit_code)
         struct process * process = array_getguy(process_table, i);
         if (process != NULL && process->ppid == curthread->p_process->pid) { // We found a child here, it should be a orphant now
             process->ppid = 1; // Now the init(boot/menu) process should adopt the child process
+            process->adopted_flag = 1;
         }
     }
 
@@ -106,6 +109,7 @@ process_destroy(struct process *process)
     assert(curspl>0); // Interrupt should be off here
     assert(process != curthread->p_process);
     pid_t pid = process->pid;
+    sem_destroy(process->sem_exit);
     kfree(process);
     array_setguy(process_table, pid - 1, NULL);
 }
@@ -113,6 +117,10 @@ process_destroy(struct process *process)
 void
 process_shutdown(void)
 {
+    int i;
+    for (i = 0; i < array_getnum(process_table); i++) {
+        kfree(array_getguy(process_table, i));
+    }
     array_destroy(process_table);
     process_table = NULL;
 }
@@ -177,10 +185,27 @@ process_wait(pid_t pid, int *status)
     }
 
     // Reap the child process
-    kfree(process);
-    array_setguy(process_table, pid - 1, NULL);
+    int i;
+    for (i=0; i<array_getnum(zombies); i++) {
+        struct thread *z = array_getguy(zombies, i);
+        if (z->p_process->pid == pid) {
+            array_remove(zombies, i);
+            break;
+        }
+    }
+    thread_destroy(process->p_thread);
+    process_destroy(process);
 
-    done_wait:
+done_wait:
     splx(spl);
+    return return_val;
+}
+
+int
+process_execv(const char *program, unsigned long argc, char **argv)
+{
+    int return_val;
+
+    // Only return on error
     return return_val;
 }

@@ -27,10 +27,10 @@ typedef enum {
 struct thread *curthread;
 
 /* Table of sleeping threads. */
-static struct array *sleepers;
+struct array *sleepers;
 
 /* List of dead threads to be disposed of. */
-static struct array *zombies;
+struct array *zombies;
 
 /* Total number of outstanding threads. Does not count zombies[]. */
 static int numthreads;
@@ -75,7 +75,6 @@ thread_create(const char *name)
  * This function cannot be called in the victim thread's own context.
  * Freeing the stack you're actually using to run would be... inadvisable.
  */
-static
 void
 thread_destroy(struct thread *thread)
 {
@@ -110,14 +109,14 @@ exorcise(void)
         struct thread *z = array_getguy(zombies, i);
         assert(z!=curthread);
         // We are init(boot/menu) we only reap our child
-        if (z->p_process->pid == 1) {
+        // Becareful here, we should only reap only the child that we adopted, not the one we created, that requires waitpid
+        if (z->p_process->ppid == 1 && z->p_process->adopted_flag) {
             process_destroy(z->p_process);
             thread_destroy(z);
+            array_remove(zombies, i);
+            i--; // Offset the array we shrinked
         }
     }
-    result = array_setsize(zombies, 0);
-    /* Shrinking the array; not supposed to be able to fail. */
-    assert(result==0);
 }
 
 /*

@@ -74,6 +74,9 @@ mips_syscall(struct trapframe *tf)
         case SYS__exit:
         err = sys__exit((int)tf->tf_a0);
         break;
+        case SYS_execv:
+        err = sys_execv((const char *)tf->tf_a0, (char **)tf->tf_a1, &retval);
+        break;
         case SYS_fork:
         err = sys_fork(tf, &retval);
         break;
@@ -137,6 +140,7 @@ md_forkentry(void *tf, unsigned long addrspace)
     p_tf->tf_v0 = 0; // Return 0 for the child process
     p_tf->tf_epc += 4; // Start to execute after fork()
     child_tf = *p_tf;
+    kfree(tf); // We don't need the parent any more
 
     // Set the child's address space
     curthread->t_vmspace = p_addrspace;

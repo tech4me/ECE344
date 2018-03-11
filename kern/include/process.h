@@ -8,6 +8,7 @@
 struct process {
     pid_t pid;
     pid_t ppid;
+    int adopted_flag;
     int exited_flag;
     int exit_code;
     struct thread *p_thread;
@@ -34,5 +35,8 @@ int process_fork(const char *name, struct trapframe *tf, pid_t *child_pid);
 
 // Helper function to wait for other process
 int process_wait(pid_t pid, int *status);
+
+// Helper function to execv
+int process_execv(const char *program, unsigned long argc, char **argv);
 
 #endif

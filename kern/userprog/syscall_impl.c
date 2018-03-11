@@ -1,5 +1,6 @@
 #include <types.h>
 #include <lib.h>
+#include <kern/limits.h>
 #include <kern/errno.h>
 #include <kern/unistd.h>
 #include <syscall.h>
@@ -13,6 +14,60 @@ sys__exit(int exitcode)
     process_exit(exitcode);
     panic("Process exit failed!");
     return 0;
+}
+
+int
+sys_execv(const char *program, char **args, int *retval)
+{
+    if (args == NULL) {
+        *retval = -1;
+        return EFAULT;
+    }
+
+    // Need to copy data from userspace to kernel first
+    int actual_length;
+    char k_program[PATH_MAX];
+    int j;
+
+    int result = copyinstr((const_userptr_t)program, k_program, PATH_MAX, &actual_length);
+    if (result) {
+        *retval = -1;
+        return result;
+    }
+
+    // Testify the pointer passed in is valid
+    char *temp;
+    result = copyin((const_userptr_t)args, (void *)&temp, sizeof(char **));
+    if (result) {
+        *retval = -1;
+        return result;
+    }
+
+    int argc = 0;
+    while (args[argc] != NULL) {
+        argc++;
+    }
+
+    char ** k_argv = kmalloc(sizeof(char *) * argc);
+    int err = 0;
+    int i;
+    for (i = 0; i < argc; i++) {
+        k_argv[i] = kmalloc(sizeof(char) * (NAME_MAX + 1));
+        result = copyinstr((const_userptr_t)args[i], k_argv[i], (NAME_MAX + 1), &actual_length);
+        if (result) {
+            err = result;
+            goto done_sys_execv;
+        }
+    }
+    *retval = process_execv(k_program, argc, k_argv); // This normally should not happen, return indicates error
+
+done_sys_execv:
+    for (j = 0; j < i; j++) {
+        kfree(k_argv[j]);
+    }
+    kfree(k_argv);
+    *retval = -1;
+    return err;
 }
 
 int
