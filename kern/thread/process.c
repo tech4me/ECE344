@@ -72,12 +72,14 @@ process_create(struct thread * thread)
     }
     process->sem_exit = sem;
 
+    int spl = splhigh(); // Don't want to corrupt process_table
     if (array_add(process_table, process)) {
+        splx(spl);
         kfree(process);
         kfree(sem);
         return NULL;
     }
-
+    splx(spl);
     return process;
 }
 

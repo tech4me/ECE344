@@ -101,7 +101,7 @@ static
 void
 exorcise(void)
 {
-    int i, result;
+    int i;
 
     assert(curspl>0);
 
