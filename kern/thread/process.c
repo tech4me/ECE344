@@ -1,10 +1,12 @@
 #include <types.h>
 #include <lib.h>
 #include <kern/errno.h>
+#include <kern/unistd.h>
 #include <array.h>
 #include <machine/spl.h>
 #include <machine/trapframe.h>
 #include <addrspace.h>
+#include <vfs.h>
 #include <process.h>
 
 #define PREALLOCATE_PROCESS 32
@@ -204,8 +206,102 @@ done_wait:
 int
 process_execv(const char *program, unsigned long argc, char **argv)
 {
-    int return_val;
+    //if (*program == NULL)
+    //    return -1;
+    struct vnode *v;
+    vaddr_t entrypoint, stackptr;
+    int result;
 
-    // Only return on error
-    return return_val;
+    /* Open the file. */
+    result = vfs_open((char *)program, O_RDONLY, &v);
+    if (result) {
+        return result;
+    }
+
+    // Save old address space before destroy it, in case load_elf fails
+    assert(curthread->t_vmspace != NULL);
+    struct addrspace *old_addrspace = curthread->t_vmspace;
+    curthread->t_vmspace = NULL;
+
+    /* Create a new address space. */
+    curthread->t_vmspace = as_create();
+    if (curthread->t_vmspace == NULL) {
+        curthread->t_vmspace = old_addrspace;
+        vfs_close(v);
+        return ENOMEM;
+    }
+
+    /* Activate it. */
+    as_activate(curthread->t_vmspace);
+
+    /* Load the executable. */
+    result = load_elf(v, &entrypoint);
+    if (result) {
+        as_destroy(curthread->t_vmspace);
+        curthread->t_vmspace = old_addrspace;
+        /* thread_exit destroys curthread->t_vmspace */
+        vfs_close(v);
+        return result;
+    }
+
+    /* Done with the file now. */
+    vfs_close(v);
+
+    /* Define the user stack in the address space */
+    result = as_define_stack(curthread->t_vmspace, &stackptr);
+    if (result) {
+        as_destroy(curthread->t_vmspace);
+        curthread->t_vmspace = old_addrspace;
+        /* thread_exit destroys curthread->t_vmspace */
+        return result;
+    }
+
+    // Now we can destroy the old one because the new one have been set up correctly
+    as_destroy(old_addrspace);
+
+    // Copy arguments to user stack
+    // First argument to md_usermode will be user main's first parameter(argc)
+    // Second argument to md_usermode will be user main's second parameter(argv)
+
+    // Allocate temporary space to save pointer to each string
+    char ** temp_arg_ptr = kmalloc(sizeof(char *) * argc);
+
+    // Store each string
+    unsigned int i;
+    for (i = 0; i < argc; i++) {
+        int length = strlen(argv[i]) + 1; // The length of the string + 1 for \0
+        stackptr -= length;
+        result = copyout((const void *)argv[i], (userptr_t)stackptr, (size_t)length);
+        if (result) {
+            kfree(temp_arg_ptr);
+            return result;
+        }
+        temp_arg_ptr[i] = (char *)stackptr;
+    }
+
+    // Take cares of allignment problem here since the strings are appended together
+    stackptr -= (stackptr % 4);
+
+    // Store pointers to each string (Note: the order is very important)
+    // Program name must be at the lowest address, and the rest gets higher and higher
+    stackptr -= (sizeof(char *) * argc); // Allocate stack for all char *
+    result = copyout((const void *)temp_arg_ptr, (userptr_t)stackptr, (size_t)(sizeof(char *) * argc));
+    kfree(temp_arg_ptr);
+    if (result) {
+        return result;
+    }
+
+    // Do this at the end to avoid double free
+    unsigned long j;
+    for (j = 0; j < argc; j++) {
+        kfree(argv[j]);
+    }
+    kfree(argv);
+
+    /* Warp to user mode. */
+    md_usermode((int)argc, (userptr_t)stackptr, stackptr, entrypoint);
+
+    /* md_usermode does not return */
+    panic("md_usermode returned\n");
+    return EINVAL;
 }

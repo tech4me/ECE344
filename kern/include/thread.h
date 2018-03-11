@@ -40,6 +40,8 @@ struct thread {
     struct vnode *t_cwd;
 };
 
+void thread_destroy(struct thread *thread);
+
 /* Call once during startup to allocate data structures. */
 struct thread *thread_bootstrap(void);
 

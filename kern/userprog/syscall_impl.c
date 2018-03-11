@@ -59,7 +59,7 @@ sys_execv(const char *program, char **args, int *retval)
             goto done_sys_execv;
         }
     }
-    *retval = process_execv(k_program, argc, k_argv); // This normally should not happen, return indicates error
+    err = process_execv(k_program, argc, k_argv); // Return normally should not happen, indicates error
 
 done_sys_execv:
     for (j = 0; j < i; j++) {

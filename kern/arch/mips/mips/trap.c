@@ -7,6 +7,7 @@
 #include <vm.h>
 #include <thread.h>
 #include <curthread.h>
+#include <syscall.h>
 
 extern u_int32_t curkstack;
 
