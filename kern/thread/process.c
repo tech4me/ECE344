@@ -43,13 +43,16 @@ process_bootstrap(void)
 struct process *
 process_create(struct thread * thread)
 {
+    int spl = splhigh(); // Don't want to corrupt pid_counter and process_table
     pid_t new_pid = allocate_pid();
     if (new_pid == 0) {
+        splx(spl);
         return NULL;
     }
 
     struct process *process = kmalloc(sizeof(struct process));
     if (process == NULL) {
+        splx(spl);
         return NULL;
     }
 
@@ -68,15 +71,15 @@ process_create(struct thread * thread)
     struct semaphore *sem = sem_create("sem_exit", 0);
     if (sem == NULL) {
         kfree(process);
+        splx(spl);
         return NULL;
     }
     process->sem_exit = sem;
 
-    int spl = splhigh(); // Don't want to corrupt process_table
     if (array_add(process_table, process)) {
-        splx(spl);
         kfree(process);
         kfree(sem);
+        splx(spl);
         return NULL;
     }
     splx(spl);
@@ -173,6 +176,7 @@ process_wait(pid_t pid, int *status)
         return_val = 0;
         goto done_wait;
     }
+    assert(pid == process->pid); // Otherwise the process_table was corrupted
     if (process->ppid != curthread->p_process->pid) { // waitpid can only be used on process's children
         *status = EINVAL;
         return_val = 0;
