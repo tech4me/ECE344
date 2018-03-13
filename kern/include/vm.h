@@ -19,6 +19,9 @@
 /* Initialization function */
 void vm_bootstrap(void);
 
+/* Get some physical pages */
+paddr_t getppages(unsigned long npages);
+
 /* Fault handling function called by trap code */
 int vm_fault(int faulttype, vaddr_t faultaddress);
 

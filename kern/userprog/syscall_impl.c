@@ -3,6 +3,7 @@
 #include <kern/limits.h>
 #include <kern/errno.h>
 #include <kern/unistd.h>
+#include <clock.h>
 #include <syscall.h>
 #include <thread.h>
 #include <curthread.h>
@@ -154,5 +155,29 @@ int
 sys_getpid(pid_t *retval)
 {
     *retval = curthread->p_process->pid;
+    return 0;
+}
+
+int
+sys___time(time_t *seconds, unsigned long *nanoseconds, time_t *retval)
+{
+    time_t sec;
+    u_int32_t nano_sec;
+    gettime(&sec, &nano_sec);
+
+    *retval = sec;
+    int err;
+    if (seconds != NULL) {
+        err = copyout((const void *)&sec, (userptr_t)seconds, sizeof(time_t));
+        if (err) {
+            return err;
+        }
+    }
+    if (nanoseconds != NULL) {
+        err = copyout((const void *)&nano_sec, (userptr_t)nanoseconds, sizeof(u_int32_t));
+        if (err) {
+            return err;
+        }
+    }
     return 0;
 }

@@ -20,4 +20,6 @@ int sys_reboot(int code);
 
 int sys_getpid(pid_t *retval);
 
+int sys___time(time_t *seconds, unsigned long *nanoseconds, time_t *retval);
+
 #endif /* _SYSCALL_H_ */
