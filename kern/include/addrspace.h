@@ -6,11 +6,17 @@
 
 struct vnode;
 
+// This defines how each segment exist in the addrspace
+struct as_segment {
+    vaddr_t vbase;
+    paddr_t pbase;
+    size_t npages;
+    u_int32_t permission; // We use *nix style permission 0-7
+};
+
 /*
  * Address space - data structure associated with the virtual memory
  * space of a process.
- *
- * You write this.
  */
 
 struct addrspace {
@@ -30,6 +36,12 @@ struct addrspace {
     paddr_t as_pbase2;
     size_t as_npages2;
     paddr_t as_stackpbase;
+
+    struct array *as_segments;
+
+    vaddr_t as_heappbase;
+    size_t heap_size;
+    vaddr_t as_stackvbase;
 #endif
 };
 

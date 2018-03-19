@@ -2,13 +2,13 @@
 #define _VM_H_
 
 #include <machine/vm.h>
+#include <addrspace.h>
 
-/*
- * VM system-related definitions.
- *
- * You'll probably want to add stuff here.
- */
-
+struct coremap_entry {
+    struct addrspace_t *as; // Which address space does this page belongs to
+    unsigned int status_flag : 1; // Indicate if this page is being used or not
+    unsigned int kernel_flag : 1; // Indicate un-swappable kernel page
+};
 
 /* Fault-type arguments to vm_fault() */
 #define VM_FAULT_READ        0    /* A read was attempted */

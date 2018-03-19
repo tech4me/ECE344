@@ -11,10 +11,49 @@
 /* under dumbvm, always have 48k of user stack */
 #define DUMBVM_STACKPAGES    12
 
+static int vm_bootstrap_flag = 0;
+static struct coremap_entry *coremap = NULL;
+static unsigned int page_count = 0;
+
 void
 vm_bootstrap(void)
 {
-    /* Do nothing. */
+    kprintf("VM bootstrap:\n");
+    u_int32_t start, end;
+
+    // Get the amount of physical memory
+    //ram_getsize(&start, &end);
+
+    // Only need the end because we know memory start at 0
+    page_count = (int)(end / PAGE_SIZE); // We also do paging for exsisting kernel memory
+    kprintf("***Total page count: %d\n", page_count);
+
+    // Now we know where to put coremap
+    coremap =  (struct coremap_entry *)PADDR_TO_KVADDR(start); // Append coremap right after the exsisting kernel memory
+
+    start += page_count * sizeof(struct coremap_entry); // New start after saving enough save for coremap
+
+    // Page align(to make our life easier)
+    start = (start + (PAGE_SIZE - 1)) & -PAGE_SIZE;
+    kprintf("***Page left after bootstrap: %d\n", (end - start)/PAGE_SIZE);
+
+    kprintf("%x\n", PADDR_TO_KVADDR(start));
+    // Here we init coremap
+    unsigned int i;
+    for (i = 0; i < page_count; i++) {
+        if (i < start/PAGE_SIZE) {
+            coremap[i].as = NULL; // There is no corresponding address space for the kernel yet
+            coremap[i].status_flag = 1; // Used
+            coremap[i].kernel_flag = 1; // Kernel
+        } else {
+            coremap[i].as = NULL; // There is no corresponding address space for the unmapped space
+            coremap[i].status_flag = 0; // Used
+            coremap[i].kernel_flag = 0; // Kernel
+        }
+    }
+
+    // TODO: CHANGE THIS
+    vm_bootstrap_flag = 0;
 }
 
 paddr_t
@@ -24,9 +63,7 @@ getppages(unsigned long npages)
     paddr_t addr;
 
     spl = splhigh();
-
     addr = ram_stealmem(npages);
-
     splx(spl);
     return addr;
 }
@@ -35,18 +72,59 @@ getppages(unsigned long npages)
 vaddr_t
 alloc_kpages(int npages)
 {
-    paddr_t pa;
-    pa = getppages(npages);
-    if (pa==0) {
-        return 0;
+    // Here we need to look to see if vm is up or not
+    // If vm is up we can't steal anymore
+    if (!vm_bootstrap_flag) {
+        paddr_t pa;
+        pa = getppages(npages);
+        if (pa==0) {
+            return 0;
+        }
+        return PADDR_TO_KVADDR(pa);
+    } else {
+        int spl = splhigh();
+        // Here we need to look at which physical memory page is available
+        // 1. Do we even have n pages available?
+        // 2. Are they continues?
+        int i, j, count = 0;
+        for (i = 0; i < page_count; i) {
+            if (!coremap[i].status_flag) {
+                count++;
+            }
+        }
+        assert(count >= npages);
+        for (i = 0; i < page_count; i++) {
+            if (!coremap[i].status_flag) { // Found an empty page
+                // Now check if we have npages of continues page
+                count = 0;
+                for (j = i; j < i + npages; j++) {
+                    if (!coremap[i].status_flag) {
+                        count = 0;
+                    } else {
+                        count = 1;
+                        break;
+                    }
+                }
+                if (!count) { // We are done
+                    break;
+                }
+            }
+        }
+        splx(spl);
+        if (count == 1) {
+            panic("Unable to allocate continous memory");
+        } else {
+            return PADDR_TO_KVADDR(i * PAGE_SIZE);
+        }
     }
-    return PADDR_TO_KVADDR(pa);
 }
 
 void
 free_kpages(vaddr_t addr)
 {
-    /* nothing */
+    // Determine how many pages we need to free
+    // 1. Starting from the page that we got
+    kprintf("Freeing 0x%x\n", addr);
 
     (void)addr;
 }
@@ -65,12 +143,10 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
     faultaddress &= PAGE_FRAME;
 
-    DEBUG(DB_VM, "dumbvm: fault: 0x%x\n", faultaddress);
-
     switch (faulttype) {
         case VM_FAULT_READONLY:
         /* We always create pages read-write, so we can't get this */
-        panic("dumbvm: got VM_FAULT_READONLY\n");
+        panic("vm: got VM_FAULT_READONLY\n");
         case VM_FAULT_READ:
         case VM_FAULT_WRITE:
         break;
