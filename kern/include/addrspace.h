@@ -1,6 +1,7 @@
 #ifndef _ADDRSPACE_H_
 #define _ADDRSPACE_H_
 
+#include <array.h>
 #include <vm.h>
 #include "opt-dumbvm.h"
 
@@ -9,7 +10,6 @@ struct vnode;
 // This defines how each segment exist in the addrspace
 struct as_segment {
     vaddr_t vbase;
-    paddr_t pbase;
     size_t npages;
     u_int32_t permission; // We use *nix style permission 0-7
 };
@@ -35,13 +35,12 @@ struct addrspace {
     vaddr_t as_vbase2;
     paddr_t as_pbase2;
     size_t as_npages2;
-    paddr_t as_stackpbase;
+    //paddr_t as_stackpbase;
 
     struct array *as_segments;
-
-    vaddr_t as_heappbase;
-    size_t heap_size;
-    vaddr_t as_stackvbase;
+    vaddr_t as_heapbase;
+    size_t as_heapsize;
+    vaddr_t as_stackbase;
 #endif
 };
 

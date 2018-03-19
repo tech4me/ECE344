@@ -23,7 +23,18 @@ as_create(void)
     as->as_vbase2 = 0;
     as->as_pbase2 = 0;
     as->as_npages2 = 0;
-    as->as_stackpbase = 0;
+    //as->as_stackpbase = 0;
+
+    as->as_segments = array_create();
+    // We pre-allocat 2 segments for the array which should be enough
+    int err = array_preallocate(as->as_segments, 2);
+    if (err) {
+        kfree(as);
+        return NULL;
+    }
+    as->as_heapbase = 0;
+    as->as_heapsize = 0;
+    as->as_stackbase = 0;
 
     return as;
 }
@@ -31,6 +42,14 @@ as_create(void)
 void
 as_destroy(struct addrspace *as)
 {
+    assert(as != NULL); // What are you doing?
+    // Iterate through all the segments and free them
+    int i;
+    for (i = 0; i < array_getnum(as->as_segments); i++) {
+        struct as_segment *seg = array_getguy(as->as_segments, i);
+        kfree(seg);
+    }
+    array_destroy(as->as_segments);
     kfree(as);
 }
 
@@ -65,51 +84,51 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 
     npages = sz / PAGE_SIZE;
 
-    /* We don't use these - all pages are read-write */
-    (void)readable;
-    (void)writeable;
-    (void)executable;
-
-    if (as->as_vbase1 == 0) {
-        as->as_vbase1 = vaddr;
-        as->as_npages1 = npages;
-        return 0;
+    struct as_segment * seg = kmalloc(sizeof(struct as_segment));
+    if (seg == NULL) {
+        return ENOMEM;
     }
 
-    if (as->as_vbase2 == 0) {
-        as->as_vbase2 = vaddr;
-        as->as_npages2 = npages;
-        return 0;
+    // Setup the segment accordingly
+    seg->vbase = vaddr;
+    seg->npages = npages;
+    seg->permission = (readable | writeable | executable);
+
+    // Insert the segment into array
+    int err = array_add(as->as_segments, seg);
+    if (err) {
+        kfree(seg);
+        return err;
     }
 
-    /*
-     * Support for more than two regions is not available.
-     */
-    kprintf("dumbvm: Warning: too many regions\n");
-    return EUNIMP;
+    // Setup heap and stack
+    as->as_heapbase = vaddr + npages * PAGE_SIZE;
+    as->as_heapsize = 0;
+    as->as_stackbase = USERSTACK;
+    return 0;
 }
 
 int
 as_prepare_load(struct addrspace *as)
 {
-    assert(as->as_pbase1 == 0);
-    assert(as->as_pbase2 == 0);
-    assert(as->as_stackpbase == 0);
+    //as->as_vbase1 = alloc_kpages(as->as_npages1);
+    //as->as_pbase1 = getppages(as->as_npages1);
+    //if (as->as_pbase1 == 0) {
+    //    return ENOMEM;
+    //}
 
-    as->as_pbase1 = getppages(as->as_npages1);
-    if (as->as_pbase1 == 0) {
-        return ENOMEM;
-    }
+    //as->as_vbase2 = alloc_kpages(as->as_npages2);
+    //as->as_pbase2 = getppages(as->as_npages2);
+    //if (as->as_pbase2 == 0) {
+    //    return ENOMEM;
+    //}
 
-    as->as_pbase2 = getppages(as->as_npages2);
-    if (as->as_pbase2 == 0) {
-        return ENOMEM;
-    }
-
-    as->as_stackpbase = getppages(DUMBVM_STACKPAGES);
-    if (as->as_stackpbase == 0) {
-        return ENOMEM;
-    }
+    //as->as_stackbase = alloc_kpages(DUMBVM_STACKPAGES);
+    //as->as_stackpbase = getppages(DUMBVM_STACKPAGES);
+    //if (as->as_stackbase == 0) {
+    //    return ENOMEM;
+    //}
+    kprintf("In as_prepare_load\n");
 
     return 0;
 }
@@ -124,7 +143,7 @@ as_complete_load(struct addrspace *as)
 int
 as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 {
-    assert(as->as_stackpbase != 0);
+    assert(as->as_stackbase != 0);
 
     *stackptr = USERSTACK;
     return 0;
@@ -152,7 +171,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 
     assert(new->as_pbase1 != 0);
     assert(new->as_pbase2 != 0);
-    assert(new->as_stackpbase != 0);
+    assert(new->as_stackbase != 0);
 
     memmove((void *)PADDR_TO_KVADDR(new->as_pbase1),
         (const void *)PADDR_TO_KVADDR(old->as_pbase1),
@@ -162,129 +181,12 @@ as_copy(struct addrspace *old, struct addrspace **ret)
         (const void *)PADDR_TO_KVADDR(old->as_pbase2),
         old->as_npages2*PAGE_SIZE);
 
+    /*
     memmove((void *)PADDR_TO_KVADDR(new->as_stackpbase),
         (const void *)PADDR_TO_KVADDR(old->as_stackpbase),
         DUMBVM_STACKPAGES*PAGE_SIZE);
+    */
 
     *ret = new;
     return 0;
 }
-
-/*struct addrspace *
-as_create(void)
-{
-    struct addrspace *as = kmalloc(sizeof(struct addrspace));
-    if (as==NULL) {
-        return NULL;
-    }
-
-    [>
-     * Initialize as needed.
-     <]
-
-    return as;
-}
-
-int
-as_copy(struct addrspace *old, struct addrspace **ret)
-{
-    struct addrspace *newas;
-
-    newas = as_create();
-    if (newas==NULL) {
-        return ENOMEM;
-    }
-
-    [>
-     * Write this.
-     <]
-
-    (void)old;
-
-    *ret = newas;
-    return 0;
-}
-
-void
-as_destroy(struct addrspace *as)
-{
-    [>
-     * Clean up as needed.
-     <]
-
-    kfree(as);
-}
-
-void
-as_activate(struct addrspace *as)
-{
-    [>
-     * Write this.
-     <]
-
-    (void)as;  // suppress warning until code gets written
-}
-
-[>
- * Set up a segment at virtual address VADDR of size MEMSIZE. The
- * segment in memory extends from VADDR up to (but not including)
- * VADDR+MEMSIZE.
- *
- * The READABLE, WRITEABLE, and EXECUTABLE flags are set if read,
- * write, or execute permission should be set on the segment. At the
- * moment, these are ignored. When you write the VM system, you may
- * want to implement them.
- <]
-int
-as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
-         int readable, int writeable, int executable)
-{
-    [>
-     * Write this.
-     <]
-
-    (void)as;
-    (void)vaddr;
-    (void)sz;
-    (void)readable;
-    (void)writeable;
-    (void)executable;
-    return EUNIMP;
-}
-
-int
-as_prepare_load(struct addrspace *as)
-{
-    [>
-     * Write this.
-     <]
-
-    (void)as;
-    return 0;
-}
-
-int
-as_complete_load(struct addrspace *as)
-{
-    [>
-     * Write this.
-     <]
-
-    (void)as;
-    return 0;
-}
-
-int
-as_define_stack(struct addrspace *as, vaddr_t *stackptr)
-{
-    [>
-     * Write this.
-     <]
-
-    (void)as;
-
-    [> Initial user-level stack pointer <]
-    *stackptr = USERSTACK;
-
-    return 0;
-}*/
