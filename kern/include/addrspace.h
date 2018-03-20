@@ -2,10 +2,18 @@
 #define _ADDRSPACE_H_
 
 #include <array.h>
+#include <queue.h>
 #include <vm.h>
 #include "opt-dumbvm.h"
 
 struct vnode;
+
+struct page_table_entry {
+    u_int32_t valid : 1; // If this entry is valid
+    u_int32_t vframe : 20; // 32 - 12 = 20
+    u_int32_t pframe : 20; // 32 - 12 = 20
+    u_int32_t permission : 3; // *nix style permission
+};
 
 // This defines how each segment exist in the addrspace
 struct as_segment {
@@ -35,9 +43,9 @@ struct addrspace {
     vaddr_t as_vbase2;
     paddr_t as_pbase2;
     size_t as_npages2;
-    //paddr_t as_stackpbase;
 
     struct array *as_segments;
+    struct queue *page_table;
     vaddr_t as_heapbase;
     size_t as_heapsize;
     vaddr_t as_stackbase;

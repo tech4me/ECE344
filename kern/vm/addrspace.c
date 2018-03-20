@@ -12,6 +12,7 @@
 struct addrspace *
 as_create(void)
 {
+    int i;
     struct addrspace *as = kmalloc(sizeof(struct addrspace));
     if (as==NULL) {
         return NULL;
@@ -23,15 +24,26 @@ as_create(void)
     as->as_vbase2 = 0;
     as->as_pbase2 = 0;
     as->as_npages2 = 0;
-    //as->as_stackpbase = 0;
 
-    as->as_segments = array_create();
-    // We pre-allocat 2 segments for the array which should be enough
+    struct array *a = array_create();
+    if (a == NULL) {
+        return NULL;
+    }
+    as->as_segments = a;
+    // We pre-allocate 2 segments for the array which should be enough
     int err = array_preallocate(as->as_segments, 2);
     if (err) {
         kfree(as);
         return NULL;
     }
+
+    // Create an empty queue
+    struct queue *q = q_create(1);
+    if (q == NULL) {
+        return NULL;
+    }
+    as->page_table = q;
+
     as->as_heapbase = 0;
     as->as_heapsize = 0;
     as->as_stackbase = 0;
@@ -128,7 +140,6 @@ as_prepare_load(struct addrspace *as)
     //if (as->as_stackbase == 0) {
     //    return ENOMEM;
     //}
-    kprintf("In as_prepare_load\n");
 
     return 0;
 }

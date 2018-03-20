@@ -8,6 +8,7 @@
 #include <kern/limits.h>
 #include <lib.h>
 #include <clock.h>
+#include <vm.h>
 #include <thread.h>
 #include <process.h>
 #include <syscall.h>
@@ -519,6 +520,7 @@ static const char *mainmenu[] = {
     "[1c] Stoplight                      ",
 #endif
     "[kh] Kernel heap stats              ",
+    "[cm] Coremap stats                  ",
     "[q] Quit and shut down              ",
     NULL
 };
@@ -577,6 +579,7 @@ static struct {
 
     /* stats */
     { "kh",         cmd_kheapstats },
+    { "cm",         coredump },
 
     /* base system tests */
     { "at",     arraytest },

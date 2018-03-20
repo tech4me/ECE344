@@ -6,8 +6,8 @@
 
 struct coremap_entry {
     struct addrspace *as; // Which address space does this page belongs to
-    unsigned int status_flag : 1; // Indicate if this page is being used or not
-    unsigned int kernel_flag : 1; // Indicate un-swappable kernel page
+    unsigned int status : 1; // Indicate if this page is being used or not
+    unsigned int kernel : 1; // Indicate un-swappable kernel page
     unsigned int block_page_count : 16; // Number of pages in the block following this page(include this page)
 };
 
@@ -29,5 +29,8 @@ int vm_fault(int faulttype, vaddr_t faultaddress);
 /* Allocate/free kernel heap pages (called by kmalloc/kfree) */
 vaddr_t alloc_kpages(int npages);
 void free_kpages(vaddr_t addr);
+
+// Print physical page usage
+int coredump(void);
 
 #endif /* _VM_H_ */
