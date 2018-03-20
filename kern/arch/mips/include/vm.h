@@ -35,6 +35,7 @@
  * a valid address, and will make a *huge* mess if you scribble on it.
  */
 #define PADDR_TO_KVADDR(paddr) ((paddr)+MIPS_KSEG0)
+#define VADDR_TO_KPADDR(vaddr) ((vaddr)-MIPS_KSEG0)
 
 /*
  * The top of user space. (Actually, the address immediately above the

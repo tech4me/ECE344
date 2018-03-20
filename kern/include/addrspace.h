@@ -2,7 +2,6 @@
 #define _ADDRSPACE_H_
 
 #include <array.h>
-#include <queue.h>
 #include <vm.h>
 #include "opt-dumbvm.h"
 
@@ -45,7 +44,7 @@ struct addrspace {
     size_t as_npages2;
 
     struct array *as_segments;
-    struct queue *page_table;
+    struct array *page_table;
     vaddr_t as_heapbase;
     size_t as_heapsize;
     vaddr_t as_stackbase;

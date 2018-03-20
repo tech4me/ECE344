@@ -2,6 +2,7 @@
 #include <kern/errno.h>
 #include <lib.h>
 #include <addrspace.h>
+#include <coremap.h>
 #include <vm.h>
 #include <machine/spl.h>
 #include <machine/tlb.h>
@@ -12,7 +13,6 @@
 struct addrspace *
 as_create(void)
 {
-    int i;
     struct addrspace *as = kmalloc(sizeof(struct addrspace));
     if (as==NULL) {
         return NULL;
@@ -37,12 +37,12 @@ as_create(void)
         return NULL;
     }
 
-    // Create an empty queue
-    struct queue *q = q_create(1);
-    if (q == NULL) {
+    // Create an empty arrray
+    a = array_create(); // TODO: Figure how the correct size to pre-allocate
+    if (a == NULL) {
         return NULL;
     }
-    as->page_table = q;
+    as->page_table = a;
 
     as->as_heapbase = 0;
     as->as_heapsize = 0;
@@ -62,6 +62,16 @@ as_destroy(struct addrspace *as)
         kfree(seg);
     }
     array_destroy(as->as_segments);
+
+    // Free page table entries
+    for (i = 0; i < array_getnum(as->page_table); i++) {
+        struct page_table_entry *e = array_getguy(as->page_table, i);
+        // Change the corresponding coremap entry (Need to change this when add swapping)
+        coremap_free_page(e->pframe);
+        kfree(e);
+    }
+    array_destroy(as->page_table);
+
     kfree(as);
 }
 

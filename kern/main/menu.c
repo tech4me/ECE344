@@ -8,7 +8,7 @@
 #include <kern/limits.h>
 #include <lib.h>
 #include <clock.h>
-#include <vm.h>
+#include <coremap.h>
 #include <thread.h>
 #include <process.h>
 #include <syscall.h>
@@ -579,7 +579,7 @@ static struct {
 
     /* stats */
     { "kh",         cmd_kheapstats },
-    { "cm",         coredump },
+    { "cm",         coremap_stats },
 
     /* base system tests */
     { "at",     arraytest },
