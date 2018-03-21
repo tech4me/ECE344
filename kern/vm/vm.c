@@ -9,13 +9,13 @@
 #include <machine/spl.h>
 #include <machine/tlb.h>
 
-#define STACKPAGES    12
+#define STACKPAGES    32
 
 static int vm_bootstrap_flag = 0;
 
 static
 int
-tlb_fault_handler(vaddr_t faultaddress, int faulttype, unsigned int permission, struct addrspace *as)
+fault_handler(vaddr_t faultaddress, int faulttype, unsigned int permission, struct addrspace *as)
 {
     assert(as); // No NULL pointer pls
     assert(as->page_table); // No NULL pointer pls
@@ -39,37 +39,28 @@ tlb_fault_handler(vaddr_t faultaddress, int faulttype, unsigned int permission, 
         }
     }
 
-    if (found_flag) { // We only have a TLB fault, page in memory
+    if (found_flag) { // We only have a TLB miss, page in memory
         paddr = e->pframe << PAGE_SHIFT;
     } else { // Right now it can only be page fault (page doesn't exsist yet)
-        // This is on-demand paging
-        for (i = (int)first_avail_page; i < (int)page_count; i++) {
-            if (!coremap[i].status) { // Found an empty page
-                coremap[i].as = curthread->t_vmspace;
-                coremap[i].status = 1;
-                coremap[i].block_page_count = 1;
-
-                // Now change page table to reflect this
-                struct page_table_entry *entry = kmalloc(sizeof(struct page_table_entry));
-                if (entry == NULL) {
-                    splx(spl);
-                    return ENOMEM;
-                }
-                entry->valid = 1;
-                entry->vframe = faultaddress >> PAGE_SHIFT;
-                entry->pframe = i;
-                entry->permission = permission;
-                err = array_add(a, entry);
-                if (err) {
-                    splx(spl);
-                    return err;
-                }
-
-                // Now change paddr
-                paddr = entry->pframe << PAGE_SHIFT;
-                break;
-            }
+        // Below is on-demand paging
+        paddr_t new_page = coremap_alloc_page();
+        // Now change page table to reflect this
+        struct page_table_entry *entry = kmalloc(sizeof(struct page_table_entry));
+        if (entry == NULL) {
+            splx(spl);
+            return ENOMEM;
         }
+        entry->valid = 1;
+        entry->vframe = faultaddress >> PAGE_SHIFT;
+        entry->pframe = new_page >> PAGE_SHIFT;
+        entry->permission = permission;
+        err = array_add(a, entry);
+        if (err) {
+            splx(spl);
+            return err;
+        }
+        // Now change paddr
+        paddr = entry->pframe << PAGE_SHIFT;
     }
 
     /* make sure it's page-aligned */
@@ -213,26 +204,8 @@ alloc_kpages(int npages)
 void
 free_kpages(vaddr_t addr)
 {
-    kprintf("Freeing address: 0x%x Frame #: %d\n", addr, VADDR_TO_KPADDR(addr) >> PAGE_SHIFT);
-    // Determine how many pages we need to free
-    // 1. Find the page from the addr that we got
-    // 2. See if we are freeing multiple page
     int spl = splhigh();
-    unsigned int i;
-    for (i = first_avail_page; i < page_count; i++) {
-        if (PADDR_TO_KVADDR(i * PAGE_SIZE) == addr) {
-            unsigned int j;
-            for (j = 0; j < coremap[i].block_page_count; j++) {
-                assert(coremap[i + j].kernel == 0); // Make sure we know what we are doing
-                coremap[i + j].as = NULL;
-                coremap[i + j].status = 0; // Available
-                coremap[i + j].block_page_count = 0; // Reset to 0
-            }
-            goto finish_free_kpages;
-        }
-    }
-    kprintf("Free failed, address not found!\n");
-finish_free_kpages:
+    coremap_free_pages(VADDR_TO_KPADDR(addr));
     splx(spl);
 }
 
@@ -277,7 +250,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
         vbase = seg->vbase;
         vtop = seg->vbase + seg->npages * PAGE_SIZE;
         if (faultaddress >= vbase && faultaddress < vtop) { // We found the region we want
-            err = tlb_fault_handler(faultaddress, faulttype, seg->permission, as);
+            err = fault_handler(faultaddress, faulttype, seg->permission, as);
             found_flag = 1;
             break;
         }
@@ -287,7 +260,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
     stacktop = USERSTACK;
 
     if (faultaddress >= stackbase && faultaddress < stacktop) {
-        err = tlb_fault_handler(faultaddress, faulttype, 6, as); // Read and Write
+        err = fault_handler(faultaddress, faulttype, 6, as); // Read and Write
         found_flag = 1;
     }
 
@@ -298,6 +271,5 @@ vm_fault(int faulttype, vaddr_t faultaddress)
         splx(spl);
         return EFAULT;
     }
-
     return err;
 }

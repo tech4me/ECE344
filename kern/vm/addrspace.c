@@ -7,9 +7,6 @@
 #include <machine/spl.h>
 #include <machine/tlb.h>
 
-/* under dumbvm, always have 48k of user stack */
-#define DUMBVM_STACKPAGES    12
-
 struct addrspace *
 as_create(void)
 {
@@ -17,13 +14,6 @@ as_create(void)
     if (as==NULL) {
         return NULL;
     }
-
-    as->as_vbase1 = 0;
-    as->as_pbase1 = 0;
-    as->as_npages1 = 0;
-    as->as_vbase2 = 0;
-    as->as_pbase2 = 0;
-    as->as_npages2 = 0;
 
     struct array *a = array_create();
     if (a == NULL) {
@@ -38,7 +28,7 @@ as_create(void)
     }
 
     // Create an empty arrray
-    a = array_create(); // TODO: Figure how the correct size to pre-allocate
+    a = array_create(); // TODO: Figure what is the correct size to pre-allocate
     if (a == NULL) {
         return NULL;
     }
@@ -67,7 +57,7 @@ as_destroy(struct addrspace *as)
     for (i = 0; i < array_getnum(as->page_table); i++) {
         struct page_table_entry *e = array_getguy(as->page_table, i);
         // Change the corresponding coremap entry (Need to change this when add swapping)
-        coremap_free_page(e->pframe);
+        coremap_free_page(e->pframe << PAGE_SHIFT);
         kfree(e);
     }
     array_destroy(as->page_table);
@@ -133,24 +123,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 int
 as_prepare_load(struct addrspace *as)
 {
-    //as->as_vbase1 = alloc_kpages(as->as_npages1);
-    //as->as_pbase1 = getppages(as->as_npages1);
-    //if (as->as_pbase1 == 0) {
-    //    return ENOMEM;
-    //}
-
-    //as->as_vbase2 = alloc_kpages(as->as_npages2);
-    //as->as_pbase2 = getppages(as->as_npages2);
-    //if (as->as_pbase2 == 0) {
-    //    return ENOMEM;
-    //}
-
-    //as->as_stackbase = alloc_kpages(DUMBVM_STACKPAGES);
-    //as->as_stackpbase = getppages(DUMBVM_STACKPAGES);
-    //if (as->as_stackbase == 0) {
-    //    return ENOMEM;
-    //}
-
+    (void)as;
     return 0;
 }
 
@@ -173,41 +146,62 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 int
 as_copy(struct addrspace *old, struct addrspace **ret)
 {
-    struct addrspace *new;
+    // Implements copy-on-write address space copying
+    // 1. Create a new address space
+    // 2. Deep copy data structures
+    // 3. Make the page table from the new address space points to the same physical memory as the old one
+    // 4. Change all the segments to be read only
+    // Note: now any write to the address space with cause TLB Hit && Page Fault
 
-    new = as_create();
-    if (new==NULL) {
+    int err;
+    int spl = splhigh(); // Critical for accessing key structures
+    struct addrspace *new = as_create();
+    if (new == NULL) {
+        splx(spl);
         return ENOMEM;
     }
 
-    new->as_vbase1 = old->as_vbase1;
-    new->as_npages1 = old->as_npages1;
-    new->as_vbase2 = old->as_vbase2;
-    new->as_npages2 = old->as_npages2;
-
-    if (as_prepare_load(new)) {
-        as_destroy(new);
-        return ENOMEM;
+    int i;
+    // Deep copy segments info
+    for (i = 0; i < array_getnum(old->as_segments); i++) {
+        struct as_segment *new_seg = kmalloc(sizeof(struct as_segment));
+        if (new_seg == NULL) {
+            splx(spl);
+            return ENOMEM;
+        }
+        struct as_segment *old_seg = array_getguy(old->as_segments, i);
+        *new_seg = *old_seg; // Copy
+        err = array_add(new->as_segments, new_seg);
+        if (err) {
+            splx(spl);
+            return err;
+        }
     }
+    new->as_heapbase = old->as_heapbase;
+    new->as_heapsize = old->as_heapsize;
+    new->as_stackbase = old->as_stackbase;
 
-    assert(new->as_pbase1 != 0);
-    assert(new->as_pbase2 != 0);
-    assert(new->as_stackbase != 0);
-
-    memmove((void *)PADDR_TO_KVADDR(new->as_pbase1),
-        (const void *)PADDR_TO_KVADDR(old->as_pbase1),
-        old->as_npages1*PAGE_SIZE);
-
-    memmove((void *)PADDR_TO_KVADDR(new->as_pbase2),
-        (const void *)PADDR_TO_KVADDR(old->as_pbase2),
-        old->as_npages2*PAGE_SIZE);
-
-    /*
-    memmove((void *)PADDR_TO_KVADDR(new->as_stackpbase),
-        (const void *)PADDR_TO_KVADDR(old->as_stackpbase),
-        DUMBVM_STACKPAGES*PAGE_SIZE);
-    */
+    // Deep copy page table
+    for (i = 0; i < array_getnum(old->page_table); i++) {
+        struct page_table_entry *new_pte = kmalloc(sizeof(struct page_table_entry));
+        if (new_pte == NULL) {
+            splx(spl);
+            return ENOMEM;
+        }
+        struct page_table_entry *old_pte = array_getguy(old->page_table, i);
+        *new_pte = *old_pte; // Copy
+        // TODO: change this
+        paddr_t paddr = coremap_alloc_page();
+        new_pte->pframe = paddr >> PAGE_SHIFT;
+        memmove((void *)PADDR_TO_KVADDR(paddr), (const void *)PADDR_TO_KVADDR(old_pte->pframe << PAGE_SHIFT), PAGE_SIZE);
+        err = array_add(new->page_table, new_pte);
+        if (err) {
+            splx(spl);
+            return err;
+        }
+    }
 
     *ret = new;
+    splx(spl);
     return 0;
 }

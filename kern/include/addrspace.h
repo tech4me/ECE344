@@ -36,18 +36,11 @@ struct addrspace {
     size_t as_npages2;
     paddr_t as_stackpbase;
 #else
-    vaddr_t as_vbase1;
-    paddr_t as_pbase1;
-    size_t as_npages1;
-    vaddr_t as_vbase2;
-    paddr_t as_pbase2;
-    size_t as_npages2;
-
     struct array *as_segments;
-    struct array *page_table;
     vaddr_t as_heapbase;
     size_t as_heapsize;
     vaddr_t as_stackbase;
+    struct array *page_table;
 #endif
 };
 
