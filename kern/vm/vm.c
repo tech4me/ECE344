@@ -42,16 +42,22 @@ fault_handler(vaddr_t faultaddress, int faulttype, unsigned int permission, stru
     if (found_flag) { // We found the page in page table
         if (faulttype == VM_FAULT_READONLY) { // Here we detected a write on shared page
             // Copy-On-Write shared page
+            // 0. (Improvement) Check if the physical page have reference count = 1, if so we don't need to allocate new page
             // 1. Allocate a new page
             // 2. Copy the page content
             // 3. Decrease the page ref count by trying to free the page
             // 4. Update page table to use the new page
             // 5. Update the TLB entry to use the new page
-            paddr = coremap_alloc_kpage();
-            memmove((void *)PADDR_TO_KVADDR(paddr), (const void *)PADDR_TO_KVADDR(e->pframe << PAGE_SHIFT), PAGE_SIZE);
-            coremap_free_page(e->pframe << PAGE_SHIFT);
-            e->pframe = paddr >> PAGE_SHIFT;
-            e->cow = 0; // No copy-on-write anymore
+            if (coremap_get_ref_count(e->pframe << PAGE_SHIFT) == 1) {
+                e->cow = 0; // No copy-on-write anymore
+                paddr = e->pframe << PAGE_SHIFT;
+            } else {
+                paddr = coremap_alloc_kpage();
+                memmove((void *)PADDR_TO_KVADDR(paddr), (const void *)PADDR_TO_KVADDR(e->pframe << PAGE_SHIFT), PAGE_SIZE);
+                coremap_free_page(e->pframe << PAGE_SHIFT);
+                e->pframe = paddr >> PAGE_SHIFT;
+                e->cow = 0; // No copy-on-write anymore
+            }
             ehi = faultaddress;
             int tlb_index = TLB_Probe(ehi, 0); // eho not used pass 0
             assert(tlb_index >= 0);

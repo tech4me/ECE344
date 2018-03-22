@@ -17,7 +17,7 @@ void coremap_init(void);
 // All the functions below should only be called after vm_bootstrap
 
 // Print physical page usage
-int coremap_stats(void);
+int coremap_stats(int nargs, char **arg);
 
 
 // The following two function should not be used directly
@@ -41,8 +41,10 @@ void coremap_free_pages(paddr_t paddr);
 // Free a single physical page(dec ref count first, if 0 free)
 #define coremap_free_page(paddr) coremap_free_pages(paddr)
 
-
 // Increase the page reference count
 void coremap_inc_page_ref_count(paddr_t paddr);
+
+// Returns the reference count of a physical page
+unsigned int coremap_get_ref_count(paddr_t paddr);
 
 #endif

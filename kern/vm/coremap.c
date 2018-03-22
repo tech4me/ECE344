@@ -49,8 +49,11 @@ coremap_init(void)
 }
 
 int
-coremap_stats(void)
+coremap_stats(int nargs, char **arg)
 {
+    // Unused parameters
+    (void)nargs;
+    (void)arg;
     int spl = splhigh(); // Disable interrupt when printing
     unsigned int i;
     for (i = 0; i < page_count; i++) {
@@ -187,4 +190,13 @@ coremap_inc_page_ref_count(paddr_t paddr)
 
     unsigned int pframe = paddr >> PAGE_SHIFT;
     coremap[pframe].ref_count += 1;
+}
+
+unsigned int
+coremap_get_ref_count(paddr_t paddr)
+{
+    assert(curspl>0); // Make sure interrupt is disabled
+
+    unsigned int pframe = paddr >> PAGE_SHIFT;
+    return coremap[pframe].ref_count;
 }
