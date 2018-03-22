@@ -47,7 +47,7 @@ array_preallocate(struct array *a, int nguys)
 	int newmax = a->max;
 
 	assert(a->num >=0 && a->num <= a->max);
-		
+
 	while (nguys > newmax) {
 		newmax = (newmax+1)*2;
 	}

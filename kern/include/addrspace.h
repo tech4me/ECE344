@@ -8,10 +8,10 @@
 struct vnode;
 
 struct page_table_entry {
-    u_int32_t valid : 1; // If this entry is valid
     u_int32_t vframe : 20; // 32 - 12 = 20
     u_int32_t pframe : 20; // 32 - 12 = 20
     u_int32_t permission : 3; // *nix style permission
+    u_int32_t cow : 1; // 0 means that tlb entry should be dirty, 1 means that tlb should not be dirty(readonly)
 };
 
 // This defines how each segment exist in the addrspace

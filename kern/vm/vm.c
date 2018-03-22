@@ -9,7 +9,7 @@
 #include <machine/spl.h>
 #include <machine/tlb.h>
 
-#define STACKPAGES    32
+#define STACKPAGES 32
 
 static int vm_bootstrap_flag = 0;
 
@@ -23,37 +23,65 @@ fault_handler(vaddr_t faultaddress, int faulttype, unsigned int permission, stru
 
     u_int32_t ehi, elo;
 
-    struct array *a = as->page_table;
-    int found_flag = 0;
     paddr_t paddr = 0;
-    // Iterate through our linked list and find the page table entry
+    unsigned int cow_flag;
+    int found_flag = 0;
+    struct array *a = as->page_table;
+
+    // Iterate through our array and find the page table entry
     int i, err;
     struct page_table_entry *e;
     for (i = 0; i < array_getnum(a); i++) {
         e = array_getguy(a, i);
-        if (e->valid) { // We only care about it if it is valid
-            if ((vaddr_t)(e->vframe << PAGE_SHIFT) == faultaddress) { // We found the page
-                found_flag = 1;
-                break;
-            }
+        if ((vaddr_t)(e->vframe << PAGE_SHIFT) == faultaddress) { // We found the page
+            found_flag = 1;
+            break;
         }
     }
 
-    if (found_flag) { // We only have a TLB miss, page in memory
-        paddr = e->pframe << PAGE_SHIFT;
+    if (found_flag) { // We found the page in page table
+        if (faulttype == VM_FAULT_READONLY) { // Here we detected a write on shared page
+            // Copy-On-Write shared page
+            // 1. Allocate a new page
+            // 2. Copy the page content
+            // 3. Decrease the page ref count by trying to free the page
+            // 4. Update page table to use the new page
+            // 5. Update the TLB entry to use the new page
+            paddr = coremap_alloc_kpage();
+            memmove((void *)PADDR_TO_KVADDR(paddr), (const void *)PADDR_TO_KVADDR(e->pframe << PAGE_SHIFT), PAGE_SIZE);
+            coremap_free_page(e->pframe << PAGE_SHIFT);
+            e->pframe = paddr >> PAGE_SHIFT;
+            e->cow = 0; // No copy-on-write anymore
+            ehi = faultaddress;
+            int tlb_index = TLB_Probe(ehi, 0); // eho not used pass 0
+            assert(tlb_index >= 0);
+            TLB_Read(&ehi, &elo, tlb_index);
+            // Make sure the entry we are chaning is valid and not dirty
+            assert(elo & TLBLO_VALID);
+            assert((elo & TLBLO_DIRTY) == 0);
+            // Now change entry to use the new physical page
+            elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+            TLB_Write(ehi, elo, tlb_index);
+            splx(spl);
+            return 0;
+        } else {
+            // Simple TLB miss and no page fault
+            paddr = e->pframe << PAGE_SHIFT;
+            cow_flag = e->cow;
+        }
     } else { // Right now it can only be page fault (page doesn't exsist yet)
         // Below is on-demand paging
-        paddr_t new_page = coremap_alloc_page();
+        paddr_t new_page = coremap_alloc_kpage();
         // Now change page table to reflect this
         struct page_table_entry *entry = kmalloc(sizeof(struct page_table_entry));
         if (entry == NULL) {
             splx(spl);
             return ENOMEM;
         }
-        entry->valid = 1;
         entry->vframe = faultaddress >> PAGE_SHIFT;
         entry->pframe = new_page >> PAGE_SHIFT;
         entry->permission = permission;
+        entry->cow = 0; // No copy-on-write
         err = array_add(a, entry);
         if (err) {
             splx(spl);
@@ -61,6 +89,7 @@ fault_handler(vaddr_t faultaddress, int faulttype, unsigned int permission, stru
         }
         // Now change paddr
         paddr = entry->pframe << PAGE_SHIFT;
+        cow_flag = entry->cow;
     }
 
     /* make sure it's page-aligned */
@@ -72,7 +101,11 @@ fault_handler(vaddr_t faultaddress, int faulttype, unsigned int permission, stru
             continue;
         }
         ehi = faultaddress;
-        elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+        if (cow_flag) {
+            elo = paddr | TLBLO_VALID;
+        } else {
+            elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+        }
         TLB_Write(ehi, elo, i);
         splx(spl);
         return 0;
@@ -87,41 +120,8 @@ void
 vm_bootstrap(void)
 {
     kprintf("VM bootstrap:\n");
-    u_int32_t start, end;
 
-    // Get the amount of physical memory
-    ram_getsize(&start, &end);
-
-    // Only need the end because we know memory start at 0
-    page_count = (int)(end / PAGE_SIZE); // We also do paging for exsisting kernel memory
-    kprintf("***Total page count: %d\n", page_count);
-
-    // Now we know where to put coremap
-    coremap =  (struct coremap_entry *)PADDR_TO_KVADDR(start); // Append coremap right after the exsisting kernel memory
-
-    start += page_count * sizeof(struct coremap_entry); // New start after saving enough save for coremap
-
-    // Page align(to make our life easier)
-    start = (start + (PAGE_SIZE - 1)) & -PAGE_SIZE;
-    kprintf("***Page left after bootstrap: %d\n", (end - start)/PAGE_SIZE);
-
-    first_avail_page = start/PAGE_SIZE;
-
-    // Here we init coremap
-    unsigned int i;
-    for (i = 0; i < page_count; i++) {
-        if (i < first_avail_page) {
-            coremap[i].as = NULL; // There is no corresponding address space for the kernel
-            coremap[i].status = 1; // Used
-            coremap[i].kernel = 1; // Kernel
-            coremap[i].block_page_count = 1; // The page itself
-        } else {
-            coremap[i].as = NULL; // There is no corresponding address space for the unmapped space
-            coremap[i].status = 0; // Unused
-            coremap[i].kernel = 0; // Not Kernel
-            coremap[i].block_page_count = 0; // Not being allocated
-        }
-    }
+    coremap_init();
 
     vm_bootstrap_flag = 1; // Finished bootstrap
 }
@@ -144,61 +144,18 @@ alloc_kpages(int npages)
 {
     // Here we need to look to see if vm is up or not
     // If vm is up we can't steal anymore
+    paddr_t paddr;
     if (!vm_bootstrap_flag) {
-        paddr_t pa;
-        pa = getppages(npages);
-        if (pa==0) {
+        paddr = getppages(npages);
+        if (paddr==0) {
             return 0;
         }
-        return PADDR_TO_KVADDR(pa);
+        return PADDR_TO_KVADDR(paddr);
     }
     int spl = splhigh();
-    // Here we need to look at which physical memory page is available
-    // 1. Do we even have n pages available?
-    // 2. Are they continues?
-    unsigned int i, j;
-    int count = 0;
-    for (i = first_avail_page; i < page_count; i++) {
-        if (!coremap[i].status) {
-            count++;
-        }
-    }
-    assert(count >= npages);
-    for (i = first_avail_page; i < page_count; i++) {
-        if (!coremap[i].status) { // Found an empty page
-            // Now check if we have npages of continues page
-            count = 0;
-            for (j = i; j < i + npages; j++) {
-                if (!coremap[i].status) {
-                    count = 0;
-                } else {
-                    count = 1;
-                    break;
-                }
-            }
-            if (!count) { // We are done
-                break;
-            }
-        }
-    }
+    vaddr_t vaddr = PADDR_TO_KVADDR(coremap_alloc_kpages(npages));
     splx(spl);
-    if (count == 1) {
-        panic("Unable to allocate continous memory");
-    }
-
-    // Now i is the offset we can use to start page allocation
-    for (j = i; j < i + npages; j++) {
-        if (j == i) {
-            coremap[j].as = curthread->t_vmspace;
-            coremap[j].status = 1;
-            coremap[j].block_page_count = npages;
-        } else {
-            coremap[j].as = curthread->t_vmspace;
-            coremap[j].status = 1;
-            coremap[j].block_page_count = 0;
-        }
-    }
-    return PADDR_TO_KVADDR(i * PAGE_SIZE);
+    return vaddr;
 }
 
 void
@@ -223,9 +180,6 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
     switch (faulttype) {
         case VM_FAULT_READONLY:
-        /* We always create pages read-write, so we can't get this */
-        panic("vm: got VM_FAULT_READONLY\n");
-        return EFAULT;
         case VM_FAULT_READ:
         case VM_FAULT_WRITE:
         break;

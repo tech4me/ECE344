@@ -26,12 +26,12 @@ static
 int
 dofork(void)
 {
-	int pid;
-	pid = fork();
-	if (pid < 0) {
-		warn("fork");
-	}
-	return pid;
+    int pid;
+    pid = fork();
+    if (pid < 0) {
+        warn("fork");
+    }
+    return pid;
 }
 
 /*
@@ -43,20 +43,20 @@ static
 void
 check(void)
 {
-	int i;
+    int i;
 
-	mypid = getpid();
-	
-	/* Make sure each fork has its own address space. */
-	for (i=0; i<800; i++) {
-		volatile int seenpid;
-		seenpid = mypid;
-		if (seenpid != getpid()) {
-			errx(1, "pid mismatch (%d, should be %d) "
-			     "- your vm is broken!", 
-			     seenpid, getpid());
-		}
-	}
+    mypid = getpid();
+
+    /* Make sure each fork has its own address space. */
+    for (i=0; i<800; i++) {
+        volatile int seenpid;
+        seenpid = mypid;
+        if (seenpid != getpid()) {
+            errx(1, "pid mismatch (%d, should be %d) "
+                 "- your vm is broken!",
+                 seenpid, getpid());
+        }
+    }
 }
 
 /*
@@ -72,25 +72,25 @@ static
 void
 dowait(int nowait, int pid)
 {
-	int x;
+    int x;
 
-	if (pid<0) {
-		/* fork in question failed; just return */
-		return;
-	}
-	if (pid==0) {
-		/* in the fork in question we were the child; exit */
-		exit(0);
-	}
+    if (pid<0) {
+        /* fork in question failed; just return */
+        return;
+    }
+    if (pid==0) {
+        /* in the fork in question we were the child; exit */
+        exit(0);
+    }
 
-	if (!nowait) {
-		if (waitpid(pid, &x, 0)<0) {
-			warn("waitpid");
-		}
-		else if (x!=0) {
-			warnx("pid %d: exit %d", pid, x);
-		}
-	}
+    if (!nowait) {
+        if (waitpid(pid, &x, 0)<0) {
+            warn("waitpid");
+        }
+        else if (x!=0) {
+            warnx("pid %d: exit %d", pid, x);
+        }
+    }
 }
 
 /*
@@ -100,56 +100,56 @@ static
 void
 test(int nowait)
 {
-	int pid0, pid1, pid2, pid3;
+    int pid0, pid1, pid2, pid3;
 
-	/*
-	 * Caution: This generates processes geometrically.
-	 *
-	 * It is unrolled to encourage gcc to registerize the pids,
-	 * to prevent wait/exit problems if fork corrupts memory.
-	 */
+    /*
+     * Caution: This generates processes geometrically.
+     *
+     * It is unrolled to encourage gcc to registerize the pids,
+     * to prevent wait/exit problems if fork corrupts memory.
+     */
 
-	pid0 = dofork();
-	putchar('0');
-	check();
-	pid1 = dofork();
-	putchar('1');
-	check();
-	pid2 = dofork();
-	putchar('2');
-	check();
-	pid3 = dofork();
-	putchar('3');
-	check();
+    pid0 = dofork();
+    putchar('0');
+    check();
+    pid1 = dofork();
+    putchar('1');
+    check();
+    //pid2 = dofork();
+    //putchar('2');
+    //check();
+    //pid3 = dofork();
+    //putchar('3');
+    //check();
 
-	/*
-	 * These must be called in reverse order to avoid waiting
-	 * improperly.
-	 */
-	dowait(nowait, pid3);
-	dowait(nowait, pid2);
-	dowait(nowait, pid1);
-	dowait(nowait, pid0);
+    /*
+     * These must be called in reverse order to avoid waiting
+     * improperly.
+     */
+    //dowait(nowait, pid3);
+    //dowait(nowait, pid2);
+    dowait(nowait, pid1);
+    dowait(nowait, pid0);
 
-	putchar('\n');
+    putchar('\n');
 }
 
 int
 main(int argc, char *argv[])
 {
-	int nowait=0;
+    int nowait=0;
 
-	if (argc==2 && !strcmp(argv[1], "-w")) {
-		nowait=1;
-	}
-	else if (argc!=1 && argc!=0) {
-		warnx("usage: forktest [-w]");
-		return 1;
-	}
-	warnx("Starting.");
+    if (argc==2 && !strcmp(argv[1], "-w")) {
+        nowait=1;
+    }
+    else if (argc!=1 && argc!=0) {
+        warnx("usage: forktest [-w]");
+        return 1;
+    }
+    warnx("Starting.");
 
-	test(nowait);
+    test(nowait);
 
-	warnx("Complete.");
-	return 0;
+    warnx("Complete.");
+    return 0;
 }

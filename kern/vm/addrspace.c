@@ -45,6 +45,7 @@ void
 as_destroy(struct addrspace *as)
 {
     assert(as != NULL); // What are you doing?
+    int spl = splhigh();
     // Iterate through all the segments and free them
     int i;
     for (i = 0; i < array_getnum(as->as_segments); i++) {
@@ -63,6 +64,7 @@ as_destroy(struct addrspace *as)
     array_destroy(as->page_table);
 
     kfree(as);
+    splx(spl);
 }
 
 void
@@ -163,7 +165,13 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 
     int i;
     // Deep copy segments info
-    for (i = 0; i < array_getnum(old->as_segments); i++) {
+    int old_size = array_getnum(old->as_segments);
+    err = array_preallocate(new->as_segments, old_size); // We pre-allocate so future array_add will not fail
+    if (err) {
+        splx(spl);
+        return err;
+    }
+    for (i = 0; i < old_size; i++) {
         struct as_segment *new_seg = kmalloc(sizeof(struct as_segment));
         if (new_seg == NULL) {
             splx(spl);
@@ -171,18 +179,20 @@ as_copy(struct addrspace *old, struct addrspace **ret)
         }
         struct as_segment *old_seg = array_getguy(old->as_segments, i);
         *new_seg = *old_seg; // Copy
-        err = array_add(new->as_segments, new_seg);
-        if (err) {
-            splx(spl);
-            return err;
-        }
+        assert(array_add(new->as_segments, new_seg) == 0);
     }
     new->as_heapbase = old->as_heapbase;
     new->as_heapsize = old->as_heapsize;
     new->as_stackbase = old->as_stackbase;
 
     // Deep copy page table
-    for (i = 0; i < array_getnum(old->page_table); i++) {
+    old_size = array_getnum(old->page_table);
+    err = array_preallocate(new->page_table, old_size); // We pre-allocate so future array_add will not fail
+    if (err) {
+        splx(spl);
+        return err;
+    }
+    for (i = 0; i < old_size; i++) {
         struct page_table_entry *new_pte = kmalloc(sizeof(struct page_table_entry));
         if (new_pte == NULL) {
             splx(spl);
@@ -190,15 +200,35 @@ as_copy(struct addrspace *old, struct addrspace **ret)
         }
         struct page_table_entry *old_pte = array_getguy(old->page_table, i);
         *new_pte = *old_pte; // Copy
-        // TODO: change this
+#ifdef NO_COW
         paddr_t paddr = coremap_alloc_page();
         new_pte->pframe = paddr >> PAGE_SHIFT;
+        // Below need to use the kernel space
+        // Important! Because each virtual address space is independent but kernel is all mapped to the same address at different address space
         memmove((void *)PADDR_TO_KVADDR(paddr), (const void *)PADDR_TO_KVADDR(old_pte->pframe << PAGE_SHIFT), PAGE_SIZE);
-        err = array_add(new->page_table, new_pte);
-        if (err) {
-            splx(spl);
-            return err;
+#else
+        // Copy-On-Write implementation
+        // 1. We increase the reference count for all the pages
+        // 2. Change cow bit to 1, so later tlb update will still maintain cow
+        // 3. We set all the pages we copied to be readonly (now write -> page fault)
+        coremap_inc_page_ref_count(old_pte->pframe << PAGE_SHIFT);
+
+        old_pte->cow = 1;
+        new_pte->cow = 1;
+
+        u_int32_t ehi, elo;
+        ehi = old_pte->vframe << PAGE_SHIFT;
+        int tlb_index = TLB_Probe(ehi, 0); // eho not used pass 0
+        if (tlb_index >= 0) { // That means we found the corresponding entry in TLB
+            TLB_Read(&ehi, &elo, tlb_index);
+            // Make sure the entry we are chaning is valid
+            // The entry can be not dirty already when you forked once already
+            assert(elo & TLBLO_VALID);
+            elo &= ~TLBLO_DIRTY; // Make all page only accessable for reading
+            TLB_Write(ehi, elo, tlb_index);
         }
+#endif
+        assert(array_add(new->page_table, new_pte) == 0);
     }
 
     *ret = new;
