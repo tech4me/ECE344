@@ -15,11 +15,10 @@ static
 int
 fault_handler(vaddr_t faultaddress, int faulttype, unsigned int permission, struct addrspace *as)
 {
+    assert(curspl>0); // Make sure interrupt is disabled
     if (coremap_get_avail_page_count() == 0) {
         return ENOMEM;
     }
-
-    int spl = splhigh();
 
     u_int32_t ehi, elo;
 
@@ -50,14 +49,13 @@ fault_handler(vaddr_t faultaddress, int faulttype, unsigned int permission, stru
             // 5. Update the TLB entry to use the new page
             if (coremap_get_ref_count(e->pframe << PAGE_SHIFT) == 1) {
                 paddr = e->pframe << PAGE_SHIFT;
-                e->cow = 0; // No copy-on-write anymore
             } else {
                 paddr = coremap_alloc_kpage();
                 memmove((void *)PADDR_TO_KVADDR(paddr), (const void *)PADDR_TO_KVADDR(e->pframe << PAGE_SHIFT), PAGE_SIZE);
                 coremap_free_page(e->pframe << PAGE_SHIFT);
                 e->pframe = paddr >> PAGE_SHIFT;
-                e->cow = 0; // No copy-on-write anymore
             }
+            e->cow = 0; // No copy-on-write anymore
             ehi = faultaddress;
             int tlb_index = TLB_Probe(ehi, 0); // eho not used pass 0
             assert(tlb_index >= 0);
@@ -68,7 +66,6 @@ fault_handler(vaddr_t faultaddress, int faulttype, unsigned int permission, stru
             // Now change entry to use the new physical page
             elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
             TLB_Write(ehi, elo, tlb_index);
-            splx(spl);
             return 0;
         } else {
             // Simple TLB miss and no page fault
@@ -81,7 +78,6 @@ fault_handler(vaddr_t faultaddress, int faulttype, unsigned int permission, stru
         // Now change page table to reflect this
         struct page_table_entry *entry = kmalloc(sizeof(struct page_table_entry));
         if (entry == NULL) {
-            splx(spl);
             return ENOMEM;
         }
         entry->vframe = faultaddress >> PAGE_SHIFT;
@@ -90,7 +86,6 @@ fault_handler(vaddr_t faultaddress, int faulttype, unsigned int permission, stru
         entry->cow = 0; // No copy-on-write
         err = array_add(a, entry);
         if (err) {
-            splx(spl);
             return err;
         }
         // Now change paddr
@@ -113,12 +108,10 @@ fault_handler(vaddr_t faultaddress, int faulttype, unsigned int permission, stru
             elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
         }
         TLB_Write(ehi, elo, i);
-        splx(spl);
         return 0;
     }
 
     kprintf("Ran out of TLB entries - cannot handle page fault\n");
-    splx(spl);
     return EFAULT;
 }
 

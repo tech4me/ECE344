@@ -171,7 +171,7 @@ sys_sbrk(intptr_t amount, void **retval)
         return ENOMEM;
     }
     *retval = (void *)(as->as_heapbase + as->as_heapsize);
-    as->as_heapsize += amount;
+    as->as_heapsize = amount + (int)as->as_heapsize;
     return 0;
 }
 
