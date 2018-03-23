@@ -53,7 +53,11 @@
  */
 #define USERSTACK   USERTOP
 
+// Max size of stack for user
+#define STACKPAGES 65536
 
+// Max size of heap for user
+#define HEAPPAGES 65536
 
 /*
  * Interface to the low-level module that looks after the amount of

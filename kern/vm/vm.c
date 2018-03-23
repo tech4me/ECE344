@@ -9,8 +9,6 @@
 #include <machine/spl.h>
 #include <machine/tlb.h>
 
-#define STACKPAGES 32
-
 static int vm_bootstrap_flag = 0;
 
 static
@@ -49,8 +47,8 @@ fault_handler(vaddr_t faultaddress, int faulttype, unsigned int permission, stru
             // 4. Update page table to use the new page
             // 5. Update the TLB entry to use the new page
             if (coremap_get_ref_count(e->pframe << PAGE_SHIFT) == 1) {
-                e->cow = 0; // No copy-on-write anymore
                 paddr = e->pframe << PAGE_SHIFT;
+                e->cow = 0; // No copy-on-write anymore
             } else {
                 paddr = coremap_alloc_kpage();
                 memmove((void *)PADDR_TO_KVADDR(paddr), (const void *)PADDR_TO_KVADDR(e->pframe << PAGE_SHIFT), PAGE_SIZE);
@@ -219,15 +217,20 @@ vm_fault(int faulttype, vaddr_t faultaddress)
     stackbase = USERSTACK - STACKPAGES * PAGE_SIZE;
     stacktop = USERSTACK;
 
+    // Stack
     if (faultaddress >= stackbase && faultaddress < stacktop) {
         err = fault_handler(faultaddress, faulttype, 6, as); // Read and Write
         found_flag = 1;
     }
 
-    // TODO: heap here
+    // Heap
+    if (faultaddress >= as->as_heapbase && faultaddress < as->as_heapbase + as->as_heapsize) {
+        err = fault_handler(faultaddress, faulttype, 6, as); // Read and Write
+        found_flag = 1;
+    }
 
     if (!found_flag) {
-        kprintf("Fault address: 0x%x not Found\n", faultaddress);
+        //kprintf("Fault address: 0x%x not Found\n", faultaddress);
         splx(spl);
         return EFAULT;
     }

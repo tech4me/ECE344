@@ -18,6 +18,8 @@ int sys_write(int fd, const void *buf, size_t nbytes, int *retval);
 
 int sys_reboot(int code);
 
+int sys_sbrk(intptr_t amount, void **retval);
+
 int sys_getpid(pid_t *retval);
 
 int sys___time(time_t *seconds, unsigned long *nanoseconds, time_t *retval);

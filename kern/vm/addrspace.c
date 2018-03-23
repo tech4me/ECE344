@@ -36,7 +36,6 @@ as_create(void)
 
     as->as_heapbase = 0;
     as->as_heapsize = 0;
-    as->as_stackbase = 0;
 
     return as;
 }
@@ -115,10 +114,9 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
         return err;
     }
 
-    // Setup heap and stack
+    // Setup heap
     as->as_heapbase = vaddr + npages * PAGE_SIZE;
     as->as_heapsize = 0;
-    as->as_stackbase = USERSTACK;
     return 0;
 }
 
@@ -139,8 +137,7 @@ as_complete_load(struct addrspace *as)
 int
 as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 {
-    assert(as->as_stackbase != 0);
-
+    (void)as;
     *stackptr = USERSTACK;
     return 0;
 }
@@ -183,7 +180,6 @@ as_copy(struct addrspace *old, struct addrspace **ret)
     }
     new->as_heapbase = old->as_heapbase;
     new->as_heapsize = old->as_heapsize;
-    new->as_stackbase = old->as_stackbase;
 
     // Deep copy page table
     old_size = array_getnum(old->page_table);

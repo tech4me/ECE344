@@ -92,6 +92,9 @@ mips_syscall(struct trapframe *tf)
         case SYS_reboot:
         err = sys_reboot(tf->tf_a0);
         break;
+        case SYS_sbrk:
+        err = sys_sbrk((intptr_t) tf->tf_a0, &retval);
+        break;
         case SYS_getpid:
         err = sys_getpid(&retval);
         break;

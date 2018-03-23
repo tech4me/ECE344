@@ -5,6 +5,7 @@
 #include <kern/unistd.h>
 #include <clock.h>
 #include <syscall.h>
+#include <addrspace.h>
 #include <thread.h>
 #include <curthread.h>
 #include <process.h>
@@ -148,6 +149,22 @@ sys_write(int fd, const void *buf, size_t nbytes, int *retval)
     kprintf("%s", kern_buf);
     kfree(kern_buf);
     *retval = nbytes;
+    return 0;
+}
+
+int
+sys_sbrk(intptr_t amount, void **retval)
+{
+    struct addrspace *as = curthread->t_vmspace;
+    if ((int)as->as_heapsize + (int)amount < 0) { // Heapsize cannot be negative
+        *retval = ((void *)-1);
+        return EINVAL;
+    } else if ((int)as->as_heapsize + (int)amount > (int)(HEAPPAGES * PAGE_SIZE)) {
+        *retval = ((void *)-1);
+        return ENOMEM;
+    }
+    *retval = (void *)(as->as_heapbase + as->as_heapsize);
+    as->as_heapsize += amount;
     return 0;
 }
 
