@@ -89,15 +89,9 @@ mips_trap(struct trapframe *tf)
         goto done;
     }
 
-    /*
-     * While we're in the kernel, and not actually handling an
-     * interrupt, leave spl where it was in the previous context,
-     * which is probably low (interrupts on).
-     */
-    splx(savespl);
-
     /* Syscall? Call the syscall handler and return. */
     if (code == EX_SYS) {
+        splx(savespl);
         /* Interrupts should have been on while in user mode. */
         assert(curspl==0);
 
@@ -143,6 +137,9 @@ mips_trap(struct trapframe *tf)
         panic("Bus error exception, PC=0x%x\n", tf->tf_epc);
         break;
     }
+
+    // Disable interrupt only for vm_fault
+    splx(savespl);
 
     /*
      * If we get to this point, it's a fatal fault - either it's

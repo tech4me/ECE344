@@ -58,14 +58,20 @@ fault_handler(vaddr_t faultaddress, int faulttype, unsigned int permission, stru
             e->cow = 0; // No copy-on-write anymore
             ehi = faultaddress & TLBHI_VPAGE; // Set the pid field to 0
             int tlb_index = TLB_Probe(ehi, 0); // eho not used pass 0
-            if (tlb_index < 0)
-            {
-                kprintf("TLB dump:\n");
-                for (i=0; i<NUM_TLB; i++) {
-                    TLB_Read(&ehi, &elo, i);
-                    kprintf("vframe: 0x%x pframe: 0x%x valid: %d dirty: %d\n", ehi >> PAGE_SHIFT, elo >> PAGE_SHIFT, (elo & TLBLO_VALID) ? 1 : 0, (elo & TLBLO_DIRTY) ? 1 : 0);
-                }
-                assert(tlb_index >= 0);
+            if (tlb_index < 0) { // No entry found in TLB that causes this fault, don't know why, but whatever
+                // Note: my suspicion is that some how an context switch(TLB flush) happened between the fault and here, but how?
+                // Edit: I know why now, in trap.c interrupt was re-enabled again... Gonna fix that...
+                kprintf("NEVER\n");
+                ehi = faultaddress & TLBHI_VPAGE; // Set the pid field to 0
+                elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+                TLB_Write(ehi, elo, 0); // Since all entry are invalid now after the context switch, just write to the first one
+                return 0;
+                //kprintf("TLB dump:\n");
+                //for (i=0; i<NUM_TLB; i++) {
+                //    TLB_Read(&ehi, &elo, i);
+                //    kprintf("vframe: 0x%x pframe: 0x%x valid: %d dirty: %d\n", ehi >> PAGE_SHIFT, elo >> PAGE_SHIFT, (elo & TLBLO_VALID) ? 1 : 0, (elo & TLBLO_DIRTY) ? 1 : 0);
+                //}
+                //assert(tlb_index >= 0);
             }
             TLB_Read(&ehi, &elo, tlb_index);
             // Make sure the entry we are chaning is valid and not dirty
@@ -184,16 +190,6 @@ vm_fault(int faulttype, vaddr_t faultaddress)
     int spl = splhigh();
 
     faultaddress &= PAGE_FRAME;
-
-    switch (faulttype) {
-        case VM_FAULT_READONLY:
-        case VM_FAULT_READ:
-        case VM_FAULT_WRITE:
-        break;
-        default:
-        splx(spl);
-        return EINVAL;
-    }
 
     as = curthread->t_vmspace;
     if (as == NULL) {
