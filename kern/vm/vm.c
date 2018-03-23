@@ -15,8 +15,10 @@ static
 int
 fault_handler(vaddr_t faultaddress, int faulttype, unsigned int permission, struct addrspace *as)
 {
-    assert(as); // No NULL pointer pls
-    assert(as->page_table); // No NULL pointer pls
+    if (coremap_get_avail_page_count() == 0) {
+        return ENOMEM;
+    }
+
     int spl = splhigh();
 
     u_int32_t ehi, elo;

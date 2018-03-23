@@ -5,6 +5,7 @@
 #include <kern/unistd.h>
 #include <clock.h>
 #include <syscall.h>
+#include <coremap.h>
 #include <addrspace.h>
 #include <thread.h>
 #include <curthread.h>
@@ -160,6 +161,12 @@ sys_sbrk(intptr_t amount, void **retval)
         *retval = ((void *)-1);
         return EINVAL;
     } else if ((int)as->as_heapsize + (int)amount > (int)(HEAPPAGES * PAGE_SIZE)) {
+        *retval = ((void *)-1);
+        return ENOMEM;
+    }
+
+    // TODO: Change this after implemented swap so btree -h can work
+    if (amount > 0 && ((unsigned int)(amount >> PAGE_SHIFT) > coremap_get_avail_page_count())) { // Exceed max number of page
         *retval = ((void *)-1);
         return ENOMEM;
     }

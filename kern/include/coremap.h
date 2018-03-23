@@ -19,6 +19,9 @@ void coremap_init(void);
 // Print physical page usage
 int coremap_stats(int nargs, char **arg);
 
+// Get current max number of pages that can be allocated
+// TODO: This should be combined with swap afterwards
+unsigned int coremap_get_avail_page_count(void);
 
 // The following two function should not be used directly
 // Use the kernel/user macros instead

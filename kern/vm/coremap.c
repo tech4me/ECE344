@@ -77,6 +77,21 @@ coremap_stats(int nargs, char **arg)
     return 0;
 }
 
+unsigned int
+coremap_get_avail_page_count(void)
+{
+    int spl = splhigh();
+    unsigned int i;
+    unsigned int count = 0;
+    for (i = 0; i < page_count; i++) {
+        if (!coremap[i].status) {
+            count++;
+        }
+    }
+    splx(spl);
+    return count;
+}
+
 paddr_t
 coremap_alloc_pages(int npages, unsigned int kernel_or_user)
 {
