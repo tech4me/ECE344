@@ -56,9 +56,17 @@ fault_handler(vaddr_t faultaddress, int faulttype, unsigned int permission, stru
                 e->pframe = paddr >> PAGE_SHIFT;
             }
             e->cow = 0; // No copy-on-write anymore
-            ehi = faultaddress;
+            ehi = faultaddress & TLBHI_VPAGE; // Set the pid field to 0
             int tlb_index = TLB_Probe(ehi, 0); // eho not used pass 0
-            assert(tlb_index >= 0);
+            if (tlb_index < 0)
+            {
+                kprintf("TLB dump:\n");
+                for (i=0; i<NUM_TLB; i++) {
+                    TLB_Read(&ehi, &elo, i);
+                    kprintf("vframe: 0x%x pframe: 0x%x valid: %d dirty: %d\n", ehi >> PAGE_SHIFT, elo >> PAGE_SHIFT, (elo & TLBLO_VALID) ? 1 : 0, (elo & TLBLO_DIRTY) ? 1 : 0);
+                }
+                assert(tlb_index >= 0);
+            }
             TLB_Read(&ehi, &elo, tlb_index);
             // Make sure the entry we are chaning is valid and not dirty
             assert(elo & TLBLO_VALID);
