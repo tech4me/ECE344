@@ -42,15 +42,16 @@ runprogram(char *progname, unsigned long argc, char **argv)
     as_activate(curthread->t_vmspace);
 
     /* Load the executable. */
-    result = load_elf(v, &entrypoint);
+    result = load_elf_on_demand(v, &entrypoint);
     if (result) {
         /* thread_exit destroys curthread->t_vmspace */
         vfs_close(v);
         return result;
     }
 
+    // We don't close the file now any more because more read might happen during process execution
     /* Done with the file now. */
-    vfs_close(v);
+    //vfs_close(v);
 
     /* Define the user stack in the address space */
     result = as_define_stack(curthread->t_vmspace, &stackptr);

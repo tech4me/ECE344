@@ -13,7 +13,7 @@ static int vm_bootstrap_flag = 0;
 
 static
 int
-fault_handler(vaddr_t faultaddress, int faulttype, unsigned int permission, struct addrspace *as)
+fault_handler(vaddr_t faultaddress, int faulttype, int segment_index, unsigned int permission, struct addrspace *as)
 {
     assert(curspl>0); // Make sure interrupt is disabled
     if (coremap_get_avail_page_count() == 0) {
@@ -58,21 +58,10 @@ fault_handler(vaddr_t faultaddress, int faulttype, unsigned int permission, stru
             e->cow = 0; // No copy-on-write anymore
             ehi = faultaddress & TLBHI_VPAGE; // Set the pid field to 0
             int tlb_index = TLB_Probe(ehi, 0); // eho not used pass 0
-            if (tlb_index < 0) { // No entry found in TLB that causes this fault, don't know why, but whatever
-                // Note: my suspicion is that some how an context switch(TLB flush) happened between the fault and here, but how?
-                // Edit: I know why now, in trap.c interrupt was re-enabled again... Gonna fix that...
-                kprintf("NEVER\n");
-                ehi = faultaddress & TLBHI_VPAGE; // Set the pid field to 0
-                elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
-                TLB_Write(ehi, elo, 0); // Since all entry are invalid now after the context switch, just write to the first one
-                return 0;
-                //kprintf("TLB dump:\n");
-                //for (i=0; i<NUM_TLB; i++) {
-                //    TLB_Read(&ehi, &elo, i);
-                //    kprintf("vframe: 0x%x pframe: 0x%x valid: %d dirty: %d\n", ehi >> PAGE_SHIFT, elo >> PAGE_SHIFT, (elo & TLBLO_VALID) ? 1 : 0, (elo & TLBLO_DIRTY) ? 1 : 0);
-                //}
-                //assert(tlb_index >= 0);
-            }
+            assert(tlb_index >= 0);
+            // No entry found in TLB that causes this fault, don't know why, but whatever
+            // Note: my suspicion is that some how an context switch(TLB flush) happened between the fault and here, but how?
+            // Edit: I know why now, in trap.c interrupt was re-enabled again... Gonna fix that...
             TLB_Read(&ehi, &elo, tlb_index);
             // Make sure the entry we are chaning is valid and not dirty
             assert(elo & TLBLO_VALID);
@@ -105,6 +94,42 @@ fault_handler(vaddr_t faultaddress, int faulttype, unsigned int permission, stru
         // Now change paddr
         paddr = entry->pframe << PAGE_SHIFT;
         cow_flag = entry->cow;
+
+        if (segment_index >= 0) { // Page haven't been read from disk yet
+            // Add entry into TLB so we can load page
+            err = 1;
+            for (i=0; i<NUM_TLB; i++) {
+                TLB_Read(&ehi, &elo, i);
+                if (elo & TLBLO_VALID) {
+                    continue;
+                }
+                ehi = faultaddress;
+                if (cow_flag) {
+                    elo = paddr | TLBLO_VALID;
+                } else {
+                    elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+                }
+                TLB_Write(ehi, elo, i);
+                err = 0;
+                break;
+            }
+            if (err) {
+                ehi = faultaddress;
+                if (cow_flag) {
+                    elo = paddr | TLBLO_VALID;
+                } else {
+                    elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+                }
+                TLB_Random(ehi, elo);
+            }
+
+            struct as_segment *seg = array_getguy(as->as_segments, segment_index);
+            err = load_page_on_demand(seg->vnode, seg->uio, faultaddress - seg->vbase);
+            if (err) {
+                return err;
+            }
+            return 0;
+        }
     }
 
     /* make sure it's page-aligned */
@@ -124,9 +149,14 @@ fault_handler(vaddr_t faultaddress, int faulttype, unsigned int permission, stru
         TLB_Write(ehi, elo, i);
         return 0;
     }
-
-    kprintf("Ran out of TLB entries - cannot handle page fault\n");
-    return EFAULT;
+    ehi = faultaddress;
+    if (cow_flag) {
+        elo = paddr | TLBLO_VALID;
+    } else {
+        elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+    }
+    TLB_Random(ehi, elo);
+    return 0;
 }
 
 void
@@ -207,7 +237,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
         vbase = seg->vbase;
         vtop = seg->vbase + seg->npages * PAGE_SIZE;
         if (faultaddress >= vbase && faultaddress < vtop) { // We found the region we want
-            err = fault_handler(faultaddress, faulttype, seg->permission, as);
+            err = fault_handler(faultaddress, faulttype, i, seg->permission, as);
             found_flag = 1;
             break;
         }
@@ -218,13 +248,13 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
     // Stack
     if (faultaddress >= stackbase && faultaddress < stacktop) {
-        err = fault_handler(faultaddress, faulttype, 6, as); // Read and Write
+        err = fault_handler(faultaddress, faulttype, -1, 6, as); // Read and Write
         found_flag = 1;
     }
 
     // Heap
     if (faultaddress >= as->as_heapbase && faultaddress < as->as_heapbase + as->as_heapsize) {
-        err = fault_handler(faultaddress, faulttype, 6, as); // Read and Write
+        err = fault_handler(faultaddress, faulttype, -1, 6, as); // Read and Write
         found_flag = 1;
     }
 

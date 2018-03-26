@@ -212,8 +212,6 @@ done_wait:
 int
 process_execv(const char *program, unsigned long argc, char **argv)
 {
-    //if (*program == NULL)
-    //    return -1;
     struct vnode *v;
     vaddr_t entrypoint, stackptr;
     int result;
@@ -241,7 +239,7 @@ process_execv(const char *program, unsigned long argc, char **argv)
     as_activate(curthread->t_vmspace);
 
     /* Load the executable. */
-    result = load_elf(v, &entrypoint);
+    result = load_elf_on_demand(v, &entrypoint);
     if (result) {
         as_destroy(curthread->t_vmspace);
         curthread->t_vmspace = old_addrspace;
@@ -250,8 +248,9 @@ process_execv(const char *program, unsigned long argc, char **argv)
         return result;
     }
 
+    // We don't close the file now any more because more read might happen during process execution
     /* Done with the file now. */
-    vfs_close(v);
+    //vfs_close(v);
 
     /* Define the user stack in the address space */
     result = as_define_stack(curthread->t_vmspace, &stackptr);

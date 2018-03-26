@@ -2,6 +2,7 @@
 #define _ADDRSPACE_H_
 
 #include <array.h>
+#include <uio.h>
 #include <vm.h>
 #include "opt-dumbvm.h"
 
@@ -19,6 +20,8 @@ struct as_segment {
     vaddr_t vbase;
     size_t npages;
     u_int32_t permission; // We use *nix style permission 0-7
+    struct vnode *vnode; // Used for on-demand paging
+    struct uio uio; // Used for on-demand paging
 };
 
 /*
@@ -101,5 +104,10 @@ int               as_define_stack(struct addrspace *as, vaddr_t *initstackptr);
 
 int load_elf(struct vnode *v, vaddr_t *entrypoint);
 
+// The on-demand version of load_elf
+int load_elf_on_demand(struct vnode *v, vaddr_t *entrypoint);
+
+// Load a page from a segment
+int load_page_on_demand(struct vnode *v, struct uio u, off_t page_offset);
 
 #endif /* _ADDRSPACE_H_ */

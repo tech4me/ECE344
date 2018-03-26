@@ -6,6 +6,8 @@
 #include <vm.h>
 #include <machine/spl.h>
 #include <machine/tlb.h>
+#include <curthread.h>
+#include <thread.h>
 
 struct addrspace *
 as_create(void)
@@ -71,9 +73,13 @@ as_activate(struct addrspace *as)
 {
     int i, spl;
 
-    (void)as;
-
     spl = splhigh();
+
+    // Change uio_space to reflect to the new addrspace for the new process
+    for (i = 0; i < array_getnum(as->as_segments); i++) {
+        struct as_segment *seg = array_getguy(as->as_segments, i);
+        seg->uio.uio_space = curthread->t_vmspace;
+    }
 
     for (i=0; i<NUM_TLB; i++) {
         TLB_Write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
