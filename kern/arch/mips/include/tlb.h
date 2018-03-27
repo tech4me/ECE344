@@ -31,6 +31,13 @@ void TLB_Write(u_int32_t entryhi, u_int32_t entrylo, u_int32_t index);
 void TLB_Read(u_int32_t *entryhi, u_int32_t *entrylo, u_int32_t index);
 int TLB_Probe(u_int32_t entryhi, u_int32_t entrylo);
 
+// Helper to flush TLB
+#define TLB_Flush()\
+    int tlb_flush_index;\
+    for(tlb_flush_index = 0; tlb_flush_index < NUM_TLB; tlb_flush_index++) {\
+        TLB_Write(TLBHI_INVALID(tlb_flush_index), TLBLO_INVALID(), tlb_flush_index);\
+    }\
+
 /*
  * TLB entry fields.
  *

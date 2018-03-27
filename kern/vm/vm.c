@@ -5,6 +5,7 @@
 #include <curthread.h>
 #include <addrspace.h>
 #include <coremap.h>
+#include <swap.h>
 #include <vm.h>
 #include <machine/spl.h>
 #include <machine/tlb.h>
@@ -17,6 +18,7 @@ fault_handler(vaddr_t faultaddress, int faulttype, int segment_index, unsigned i
 {
     assert(curspl>0); // Make sure interrupt is disabled
     if (coremap_get_avail_page_count() == 0) {
+        kprintf("NOMEM!");
         return ENOMEM;
     }
 
@@ -47,17 +49,22 @@ fault_handler(vaddr_t faultaddress, int faulttype, int segment_index, unsigned i
             // 3. Decrease the page ref count by trying to free the page
             // 4. Update page table to use the new page
             // 5. Update the TLB entry to use the new page
-            if (coremap_get_ref_count(e->pframe << PAGE_SHIFT) == 1) {
+            if (coremap_get_page_ref_count(e->pframe << PAGE_SHIFT) == 1) {
                 paddr = e->pframe << PAGE_SHIFT;
             } else {
-                paddr = coremap_alloc_kpage();
+                paddr = coremap_alloc_upage(i);
                 memmove((void *)PADDR_TO_KVADDR(paddr), (const void *)PADDR_TO_KVADDR(e->pframe << PAGE_SHIFT), PAGE_SIZE);
                 coremap_free_page(e->pframe << PAGE_SHIFT);
                 e->pframe = paddr >> PAGE_SHIFT;
             }
             e->cow = 0; // No copy-on-write anymore
+            cow_flag = e->cow;
             ehi = faultaddress & TLBHI_VPAGE; // Set the pid field to 0
             int tlb_index = TLB_Probe(ehi, 0); // eho not used pass 0
+            if (tlb_index >= 0) {
+                TLB_Write(TLBHI_INVALID(tlb_index), TLBLO_INVALID(), tlb_index);
+            }
+#if 0
             assert(tlb_index >= 0);
             // No entry found in TLB that causes this fault, don't know why, but whatever
             // Note: my suspicion is that some how an context switch(TLB flush) happened between the fault and here, but how?
@@ -70,14 +77,15 @@ fault_handler(vaddr_t faultaddress, int faulttype, int segment_index, unsigned i
             elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
             TLB_Write(ehi, elo, tlb_index);
             return 0;
+#endif
         } else {
             // Simple TLB miss and no page fault
             paddr = e->pframe << PAGE_SHIFT;
             cow_flag = e->cow;
         }
-    } else { // Right now it can only be page fault (page doesn't exsist yet)
+    } else {
         // Below is on-demand paging
-        paddr_t new_page = coremap_alloc_kpage();
+        paddr_t new_page = coremap_alloc_upage(array_getnum(a));
         // Now change page table to reflect this
         struct page_table_entry *entry = kmalloc(sizeof(struct page_table_entry));
         if (entry == NULL) {
@@ -165,6 +173,7 @@ vm_bootstrap(void)
     kprintf("VM bootstrap:\n");
 
     coremap_init();
+    swap_init();
 
     vm_bootstrap_flag = 1; // Finished bootstrap
 }

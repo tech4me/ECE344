@@ -93,7 +93,7 @@ coremap_get_avail_page_count(void)
 }
 
 paddr_t
-coremap_alloc_pages(int npages, unsigned int kernel_or_user)
+coremap_alloc_pages(int npages, unsigned int kernel_or_user, unsigned int pt_index)
 {
     assert(curspl>0); // Make sure interrupt is disabled
 
@@ -137,14 +137,16 @@ coremap_alloc_pages(int npages, unsigned int kernel_or_user)
     for (j = i; j < i + npages; j++) {
         if (j == i) {
             coremap[j].as = curthread->t_vmspace;
+            coremap[j].pt_index = pt_index;
             coremap[j].status = 1;
-            coremap[i].kernel = kernel_or_user;
+            coremap[j].kernel = kernel_or_user;
             coremap[j].block_page_count = npages;
             coremap[j].ref_count = 1;
         } else {
             coremap[j].as = curthread->t_vmspace;
+            coremap[j].pt_index = pt_index;
             coremap[j].status = 1;
-            coremap[i].kernel = kernel_or_user;
+            coremap[j].kernel = kernel_or_user;
             coremap[j].block_page_count = 0;
             coremap[j].ref_count = 0;
         }
@@ -153,13 +155,14 @@ coremap_alloc_pages(int npages, unsigned int kernel_or_user)
 }
 
 paddr_t
-coremap_alloc_page(unsigned int kernel_or_user)
+coremap_alloc_page(unsigned int kernel_or_user, unsigned int pt_index)
 {
     assert(curspl>0); // Make sure interrupt is disabled
     int i;
     for (i = 0; i < (int)page_count; i++) {
         if (!coremap[i].status) { // Found an empty page
             coremap[i].as = curthread->t_vmspace;
+            coremap[i].pt_index = pt_index;
             coremap[i].status = 1;
             coremap[i].kernel = kernel_or_user;
             coremap[i].block_page_count = 1;
@@ -192,6 +195,7 @@ coremap_free_pages(paddr_t paddr)
             coremap[pframe + i].status = 0;
             coremap[pframe + i].kernel = 0;
             coremap[pframe + i].as = NULL;
+            coremap[pframe + i].pt_index = -1;
             coremap[pframe + i].block_page_count = 0;
             coremap[pframe + i].ref_count = 0;
         }
@@ -208,10 +212,38 @@ coremap_inc_page_ref_count(paddr_t paddr)
 }
 
 unsigned int
-coremap_get_ref_count(paddr_t paddr)
+coremap_get_page_ref_count(paddr_t paddr)
 {
     assert(curspl>0); // Make sure interrupt is disabled
 
     unsigned int pframe = paddr >> PAGE_SHIFT;
     return coremap[pframe].ref_count;
+}
+
+void
+coremap_page_swap_in(paddr_t paddr, struct addrspace *as, unsigned int pt_index)
+{
+    assert(curspl>0); // Make sure interrupt is disabled
+
+    unsigned int pframe = paddr >> PAGE_SHIFT;
+    coremap[pframe].status = 1;
+    coremap[pframe].kernel = 0; // Kernel should never be swapped out in the first place
+    coremap[pframe].as = as;
+    coremap[pframe].pt_index = pt_index;
+    coremap[pframe].block_page_count = 1;
+    coremap[pframe].ref_count = 1;
+}
+
+void
+coremap_page_swap_out(paddr_t paddr)
+{
+    assert(curspl>0); // Make sure interrupt is disabled
+
+    unsigned int pframe = paddr >> PAGE_SHIFT;
+    coremap[pframe].status = 0;
+    coremap[pframe].kernel = 0; // Kernel should never be swapped out in the first place
+    coremap[pframe].as = NULL;
+    coremap[pframe].pt_index = -1;
+    coremap[pframe].block_page_count = 0;
+    coremap[pframe].ref_count = 0;
 }

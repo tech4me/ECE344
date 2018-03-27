@@ -8,6 +8,7 @@
 #include <machine/tlb.h>
 #include <curthread.h>
 #include <thread.h>
+#include <vfs.h>
 
 struct addrspace *
 as_create(void)
@@ -81,9 +82,7 @@ as_activate(struct addrspace *as)
         seg->uio.uio_space = curthread->t_vmspace;
     }
 
-    for (i=0; i<NUM_TLB; i++) {
-        TLB_Write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
-    }
+    TLB_Flush();
 
     splx(spl);
 }
@@ -202,13 +201,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
         }
         struct page_table_entry *old_pte = array_getguy(old->page_table, i);
         *new_pte = *old_pte; // Copy
-#ifdef NO_COW
-        paddr_t paddr = coremap_alloc_page();
-        new_pte->pframe = paddr >> PAGE_SHIFT;
-        // Below need to use the kernel space
-        // Important! Because each virtual address space is independent but kernel is all mapped to the same address at different address space
-        memmove((void *)PADDR_TO_KVADDR(paddr), (const void *)PADDR_TO_KVADDR(old_pte->pframe << PAGE_SHIFT), PAGE_SIZE);
-#else
+
         // Copy-On-Write implementation
         // 1. We increase the reference count for all the pages
         // 2. Change cow bit to 1, so later tlb update will still maintain cow
@@ -229,7 +222,6 @@ as_copy(struct addrspace *old, struct addrspace **ret)
             elo &= ~TLBLO_DIRTY; // Make all page only accessable for reading
             TLB_Write(ehi, elo, tlb_index);
         }
-#endif
         assert(array_add(new->page_table, new_pte) == 0);
     }
 

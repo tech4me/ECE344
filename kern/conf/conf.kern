@@ -396,6 +396,7 @@ file      userprog/uio.c
 
 optofffile dumbvm   vm/addrspace.c
 optofffile dumbvm   vm/coremap.c
+optofffile dumbvm   vm/swap.c
 optofffile dumbvm   vm/vm.c
 
 #
