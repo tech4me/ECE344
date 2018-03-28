@@ -17,10 +17,6 @@ int
 fault_handler(vaddr_t faultaddress, int faulttype, int segment_index, unsigned int permission, struct addrspace *as)
 {
     assert(curspl>0); // Make sure interrupt is disabled
-    if (coremap_get_avail_page_count() == 0) {
-        kprintf("NOMEM!");
-        return ENOMEM;
-    }
 
     u_int32_t ehi, elo;
 
@@ -41,50 +37,102 @@ fault_handler(vaddr_t faultaddress, int faulttype, int segment_index, unsigned i
     }
 
     if (found_flag) { // We found the page in page table
-        if (faulttype == VM_FAULT_READONLY) { // Here we detected a write on shared page
-            // Copy-On-Write shared page
-            // 0. (Improvement) Check if the physical page have reference count = 1, if so we don't need to allocate new page
-            // 1. Allocate a new page
-            // 2. Copy the page content
-            // 3. Decrease the page ref count by trying to free the page
-            // 4. Update page table to use the new page
-            // 5. Update the TLB entry to use the new page
-            if (coremap_get_page_ref_count(e->pframe << PAGE_SHIFT) == 1) {
-                paddr = e->pframe << PAGE_SHIFT;
-            } else {
+        if (e->swapped) {// If the page was swapped out, now we need to load this page back in
+            if (faulttype == VM_FAULT_READONLY) { // Here we detected a write on shared page
+                // Copy-On-Write with swapping
+                // 1. We check the swap_coremap_ref_count in pte, if == 1 we swap in that page
+                // 2. Or in the other case we check the memory to see if we have free page, evict if we don't
+                // 3. We allocate a new page
+                // 4. We do swap_load_page but IMPORTANT: we don't free the page in swapfile
+                // 5. Decrease the swap_coremap_ref_count
+                // 6. Update page table to use the new page
+                // 7. Update the TLB entry to use the new page
+                // NOTE: We can't use the old method of modifying the TLB entry, because during page operation TLB can change
+
+                if (coremap_get_avail_page_count() == 0) { // Now we need to swap out
+                    swap_evict();
+                }
                 paddr = coremap_alloc_upage(i);
-                memmove((void *)PADDR_TO_KVADDR(paddr), (const void *)PADDR_TO_KVADDR(e->pframe << PAGE_SHIFT), PAGE_SIZE);
-                coremap_free_page(e->pframe << PAGE_SHIFT);
+
+                if (e->swap_coremap_ref_count == 1) {
+                    swap_load_page(paddr, e->swap_file_frame, as, i, e->swap_coremap_ref_count);
+                } else {
+                    e->swap_coremap_ref_count--;
+                    assert(e->swap_coremap_ref_count > 0); // This should be the case
+                    swap_load_page(paddr, e->swap_file_frame, as, i, e->swap_coremap_ref_count);
+                }
                 e->pframe = paddr >> PAGE_SHIFT;
+                e->cow = 0; // No copy-on-write anymore
+                cow_flag = e->cow;
+                ehi = faultaddress & TLBHI_VPAGE; // Set the pid field to 0
+                int tlb_index = TLB_Probe(ehi, 0); // eho not used pass 0
+                if (tlb_index >= 0) {
+                    TLB_Write(TLBHI_INVALID(tlb_index), TLBLO_INVALID(), tlb_index);
+                }
+            } else {
+                //kprintf("Swap in addr 0x%x\n", faultaddress);
+                // We need to bring the page back in from swap
+                // 1. Check if we have free page in memory
+                // 2. If we do just load the page
+                // 3. if we don't we evict and load the page
+
+                if (coremap_get_avail_page_count() == 0) { // Now we need to swap out
+                    swap_evict();
+                }
+                paddr = coremap_alloc_upage(i);
+                e->pframe = paddr >> PAGE_SHIFT;
+                swap_load_page(paddr, e->swap_file_frame, as, i, e->swap_coremap_ref_count);
+                // Update pte
+                e->swapped = 0;
+                e->swap_file_frame = -1;
+                e->swap_coremap_ref_count = 1;
+
+                cow_flag = e->cow;
             }
-            e->cow = 0; // No copy-on-write anymore
-            cow_flag = e->cow;
-            ehi = faultaddress & TLBHI_VPAGE; // Set the pid field to 0
-            int tlb_index = TLB_Probe(ehi, 0); // eho not used pass 0
-            if (tlb_index >= 0) {
-                TLB_Write(TLBHI_INVALID(tlb_index), TLBLO_INVALID(), tlb_index);
-            }
-#if 0
-            assert(tlb_index >= 0);
-            // No entry found in TLB that causes this fault, don't know why, but whatever
-            // Note: my suspicion is that some how an context switch(TLB flush) happened between the fault and here, but how?
-            // Edit: I know why now, in trap.c interrupt was re-enabled again... Gonna fix that...
-            TLB_Read(&ehi, &elo, tlb_index);
-            // Make sure the entry we are chaning is valid and not dirty
-            assert(elo & TLBLO_VALID);
-            assert((elo & TLBLO_DIRTY) == 0);
-            // Now change entry to use the new physical page
-            elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
-            TLB_Write(ehi, elo, tlb_index);
-            return 0;
-#endif
         } else {
-            // Simple TLB miss and no page fault
-            paddr = e->pframe << PAGE_SHIFT;
-            cow_flag = e->cow;
+            if (faulttype == VM_FAULT_READONLY) { // Here we detected a write on shared page
+                // Copy-On-Write shared page
+                // 0. (Improvement) Check if the physical page have reference count = 1, if so we don't need to allocate new page
+                // 1. Allocate a new page
+                // 2. Copy the page content
+                // 3. Decrease the page ref count by trying to free the page
+                // 4. Update page table to use the new page
+                // 5. Update the TLB entry to use the new page
+                if (coremap_get_page_ref_count(e->pframe << PAGE_SHIFT) == 1) {
+                    paddr = e->pframe << PAGE_SHIFT;
+                } else {
+                    if (coremap_get_avail_page_count() == 0) { // Now we need to swap out
+                        swap_evict();
+                    }
+                    paddr = coremap_alloc_upage(i);
+                    memmove((void *)PADDR_TO_KVADDR(paddr), (const void *)PADDR_TO_KVADDR(e->pframe << PAGE_SHIFT), PAGE_SIZE);
+                    coremap_free_page(e->pframe << PAGE_SHIFT);
+                    e->pframe = paddr >> PAGE_SHIFT;
+                }
+                e->cow = 0; // No copy-on-write anymore
+                cow_flag = e->cow;
+                ehi = faultaddress & TLBHI_VPAGE; // Set the pid field to 0
+                int tlb_index = TLB_Probe(ehi, 0); // eho not used pass 0
+                if (tlb_index >= 0) {
+                    TLB_Write(TLBHI_INVALID(tlb_index), TLBLO_INVALID(), tlb_index);
+                }
+            } else {
+                // Here we have a simple TLB miss and the page is in memory already
+                paddr = e->pframe << PAGE_SHIFT;
+                cow_flag = e->cow;
+            }
         }
     } else {
+        //kprintf("Loading addr 0x%x\n", faultaddress);
+        // New with swap:
+        // 1. Check if we have free page in memory
+        // 2. If we do just allocate the new page
+        // 3. If we don't we evict and allocate the new page
+
         // Below is on-demand paging
+        if (coremap_get_avail_page_count() == 0) { // Now we need to swap out
+            swap_evict();
+        }
         paddr_t new_page = coremap_alloc_upage(array_getnum(a));
         // Now change page table to reflect this
         struct page_table_entry *entry = kmalloc(sizeof(struct page_table_entry));
@@ -95,6 +143,9 @@ fault_handler(vaddr_t faultaddress, int faulttype, int segment_index, unsigned i
         entry->pframe = new_page >> PAGE_SHIFT;
         entry->permission = permission;
         entry->cow = 0; // No copy-on-write
+        entry->swapped = 0;
+        entry->swap_file_frame = -1;
+        entry->swap_coremap_ref_count = 1;
         err = array_add(a, entry);
         if (err) {
             return err;
@@ -205,6 +256,11 @@ alloc_kpages(int npages)
         return PADDR_TO_KVADDR(paddr);
     }
     int spl = splhigh();
+    unsigned int count = coremap_get_avail_page_count();
+    while ((int)count < npages) {
+        swap_evict();
+        count = coremap_get_avail_page_count();
+    }
     vaddr_t vaddr = PADDR_TO_KVADDR(coremap_alloc_kpages(npages));
     splx(spl);
     return vaddr;

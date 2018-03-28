@@ -3,6 +3,7 @@
 #include <lib.h>
 #include <addrspace.h>
 #include <coremap.h>
+#include <swap.h>
 #include <vm.h>
 #include <machine/spl.h>
 #include <machine/tlb.h>
@@ -59,8 +60,13 @@ as_destroy(struct addrspace *as)
     // Free page table entries
     for (i = 0; i < array_getnum(as->page_table); i++) {
         struct page_table_entry *e = array_getguy(as->page_table, i);
-        // Change the corresponding coremap entry (Need to change this when add swapping)
-        coremap_free_page(e->pframe << PAGE_SHIFT);
+        if (e->swapped) {
+            // If the page is currently in swap
+            swap_free_page(e->swap_file_frame);
+        } else {
+            // Change the corresponding coremap entry
+            coremap_free_page(e->pframe << PAGE_SHIFT);
+        }
         kfree(e);
     }
     array_destroy(as->page_table);

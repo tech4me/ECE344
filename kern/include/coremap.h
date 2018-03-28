@@ -12,6 +12,8 @@ struct coremap_entry {
     unsigned int pt_index : 16; // Index of the page in the page table
 };
 
+extern struct coremap_entry *coremap;
+
 // Init coremap structure
 void coremap_init(void);
 
@@ -21,7 +23,6 @@ void coremap_init(void);
 int coremap_stats(int nargs, char **arg);
 
 // Get current max number of pages that can be allocated
-// TODO: This should be combined with swap afterwards
 unsigned int coremap_get_avail_page_count(void);
 
 // The following two function should not be used directly
@@ -36,6 +37,7 @@ paddr_t coremap_alloc_page(unsigned int kernel_or_user, unsigned int pt_index);
 
 #define coremap_alloc_kpages(npages) coremap_alloc_pages(npages, 1, -1)
 #define coremap_alloc_kpage() coremap_alloc_page(1, -1)
+
 // This should never be called
 //#define coremap_alloc_upages(npages, pt_index) coremap_alloc_pages(npages, 0, pt_index)
 #define coremap_alloc_upage(pt_index) coremap_alloc_page(0, pt_index)
@@ -53,7 +55,10 @@ void coremap_inc_page_ref_count(paddr_t paddr);
 unsigned int coremap_get_page_ref_count(paddr_t paddr);
 
 // Update coremap for swap-in/swap-out
-void coremap_page_swap_in(paddr_t paddr, struct addrspace *as, unsigned int pt_index);
+void coremap_page_swap_in(paddr_t paddr, struct addrspace *as, unsigned int pt_index, unsigned ref_count);
 void coremap_page_swap_out(paddr_t paddr);
+
+// Find a page to evict
+unsigned int coremap_page_to_evict(void);
 
 #endif

@@ -97,6 +97,9 @@ coremap_alloc_pages(int npages, unsigned int kernel_or_user, unsigned int pt_ind
 {
     assert(curspl>0); // Make sure interrupt is disabled
 
+    assert(npages < 2); // Based on my test, kmalloc don't need more then 1 coutinous page, and user will never need continous page
+    // TODO Fix this to support continous paging
+
     // Here we need to look at which physical memory page is available
     // 1. Do we even have n pages available?
     // 2. Are they continues?
@@ -107,13 +110,14 @@ coremap_alloc_pages(int npages, unsigned int kernel_or_user, unsigned int pt_ind
             count++;
         }
     }
-    if (count <= npages) {
-        panic("coremap_alloc_pages failed: out of physical memory!\n"); // TODO: remove this after swap
+    if (count < npages) {
+        coremap_stats(0, NULL);
+        panic("coremap_alloc_pages failed: requires %d continous pages\n", npages); // TODO: remove this after swap
         return (paddr_t)NULL;
     }
     for (i = 0; i < page_count; i++) {
         if (!coremap[i].status) { // Found an empty page
-            // Now check if we have npages of continues page
+            // Now check if we have npages of continous page
             count = 0;
             for (j = i; j < i + npages; j++) {
                 if (!coremap[i].status) {
@@ -129,7 +133,8 @@ coremap_alloc_pages(int npages, unsigned int kernel_or_user, unsigned int pt_ind
         }
     }
     if (count == 1) {
-        panic("coremap_alloc_pages failed: out of physical memory!\n"); // TODO: remove this after swap
+        coremap_stats(0, NULL);
+        panic("coremap_alloc_pages failed: requires %d continous pages\n", npages); // TODO: remove this after swap
         return (paddr_t)NULL;
     }
 
@@ -170,7 +175,7 @@ coremap_alloc_page(unsigned int kernel_or_user, unsigned int pt_index)
             return (i << PAGE_SHIFT);
         }
     }
-    panic("coremap_alloc_page failed: out of physical memory!\n"); // TODO: remove this after swap
+    assert(0); // We should never be here, because this function will only be called if we know we have memory
     return (paddr_t)NULL;
 }
 
@@ -221,7 +226,7 @@ coremap_get_page_ref_count(paddr_t paddr)
 }
 
 void
-coremap_page_swap_in(paddr_t paddr, struct addrspace *as, unsigned int pt_index)
+coremap_page_swap_in(paddr_t paddr, struct addrspace *as, unsigned int pt_index, unsigned int ref_count)
 {
     assert(curspl>0); // Make sure interrupt is disabled
 
@@ -231,7 +236,7 @@ coremap_page_swap_in(paddr_t paddr, struct addrspace *as, unsigned int pt_index)
     coremap[pframe].as = as;
     coremap[pframe].pt_index = pt_index;
     coremap[pframe].block_page_count = 1;
-    coremap[pframe].ref_count = 1;
+    coremap[pframe].ref_count = ref_count;
 }
 
 void
@@ -246,4 +251,30 @@ coremap_page_swap_out(paddr_t paddr)
     coremap[pframe].pt_index = -1;
     coremap[pframe].block_page_count = 0;
     coremap[pframe].ref_count = 0;
+}
+
+unsigned int
+coremap_page_to_evict(void)
+{
+    assert(curspl>0); // Make sure interrupt is disabled
+
+    // Right now we just return a random page TODO: Change this to be better such as aging
+    unsigned int i, count = 0;
+    for (i = 0; i < page_count; i++) {
+        if (!coremap[i].kernel) { // Have to be not a kernel page, bad things might happen
+            count++;
+        }
+    }
+    unsigned int index = random() % count;
+    count = 0;
+    for (i = 0; i < page_count; i++) {
+        if (!coremap[i].kernel) { // Have to be not a kernel page, bad things might happen
+            if (index == count) {
+                return i; // i is the page that we want to evict
+            }
+            count++;
+        }
+    }
+    assert(0); // Should not reach here
+    return -1;
 }
