@@ -104,7 +104,7 @@ swap_evict(void)
     if (pt_index >= array_getnum(as->page_table)) {
         kprintf("Swap evict caused it!\n");
         kprintf("pframe: %d\n", pframe);
-        kprintf("fileframe: %d\n", fileframe);
+        kprintf("fileframe: %d\n", file_frame);
         kprintf("Coremap entry:\n");
         kprintf("status %d\n", coremap[pframe].status);
         kprintf("kernel %d\n", coremap[pframe].kernel);
