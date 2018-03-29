@@ -109,29 +109,6 @@ load_segment_on_demand(struct vnode *v, int index, off_t offset, vaddr_t vaddr,
     struct as_segment *seg = array_getguy(curthread->t_vmspace->as_segments, index);
     seg->vnode = v;
     seg->uio = u;
-#if 0
-    result = VOP_READ(v, &u);
-    if (result) {
-        return result;
-    }
-
-    if (u.uio_resid != 0) {
-        /* short read; problem with executable? */
-        kprintf("ELF: short read on segment - file truncated?\n");
-        return ENOEXEC;
-    }
-
-    /* Fill the rest of the memory space (if any) with zeros */
-    fillamt = memsize - filesize;
-    if (fillamt > 0) {
-        DEBUG(DB_EXEC, "ELF: Zero-filling %lu more bytes\n",
-              (unsigned long) fillamt);
-        u.uio_resid += fillamt;
-        result = uiomovezeros(fillamt, &u);
-    }
-
-    return result;
-#endif
     return 0;
 }
 

@@ -34,12 +34,14 @@ coremap_init(void)
     for (i = 0; i < page_count; i++) {
         if (i < start/PAGE_SIZE) {
             coremap[i].as = NULL; // There is no corresponding address space for the kernel
+            coremap[i].pt_index = -1; // No process table for kernel
             coremap[i].status = 1; // Used
             coremap[i].kernel = 1; // Kernel
             coremap[i].block_page_count = 1; // The page itself
             coremap[i].ref_count = 1;
         } else {
             coremap[i].as = NULL; // There is no corresponding address space for the unmapped space
+            coremap[i].pt_index = -1; // Un-init
             coremap[i].status = 0; // Unused
             coremap[i].kernel = 0; // Not Kernel
             coremap[i].block_page_count = 0; // Not being allocated

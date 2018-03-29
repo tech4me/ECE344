@@ -101,9 +101,18 @@ swap_evict(void)
     // Update pte
     struct addrspace *as = coremap[pframe].as;
     unsigned int pt_index = coremap[pframe].pt_index;
+    if (pt_index >= array_getnum(as->page_table)) {
+        kprintf("Swap evict caused it!\n");
+        kprintf("pframe: %d\n", pframe);
+        kprintf("fileframe: %d\n", fileframe);
+        kprintf("Coremap entry:\n");
+        kprintf("status %d\n", coremap[pframe].status);
+        kprintf("kernel %d\n", coremap[pframe].kernel);
+        kprintf("as 0x%x\n", coremap[pframe].as);
+        kprintf("pt_index %d\n", coremap[pframe].pt_index);
+    }
     struct page_table_entry *e = array_getguy(as->page_table, pt_index);
     assert(e->swapped == 0); // Page shouldn't be swapped out already
-    //kprintf("Evicted 0x%x, pt_index%d\n", e->vframe << PAGE_SHIFT, pt_index);
     e->swapped = 1;
     e->swap_file_frame = file_frame;
     e->swap_coremap_ref_count = coremap[pframe].ref_count;
