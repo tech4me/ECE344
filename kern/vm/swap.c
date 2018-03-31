@@ -1,4 +1,5 @@
 #include <types.h>
+#include <kern/errno.h>
 #include <lib.h>
 #include <machine/vm.h>
 #include <machine/spl.h>
@@ -15,6 +16,7 @@
 static struct vnode *swapfile;
 static unsigned int swapsize;
 static struct bitmap *swap_table;
+static unsigned int swap_avail_page;
 
 void
 swap_init(void)
@@ -29,8 +31,15 @@ swap_init(void)
     VOP_STAT(swapfile, &stat);
     swapsize = stat.st_size / PAGE_SIZE; // Get the number of pages that can be used for swapping
     swap_table = bitmap_create(swapsize); // Use this structure to allocate and deallocate swap page
+    swap_avail_page = swapsize;
 }
 
+unsigned int
+swap_get_avail_page_count(void)
+{
+    assert(curspl>0); // Make sure interrupt is disabled
+    return swap_avail_page;
+}
 
 void
 swap_load_page(paddr_t paddr, unsigned int file_frame, struct addrspace *as, unsigned int pt_index, unsigned int ref_count)
@@ -75,6 +84,7 @@ swap_alloc_page(void)
     assert(curspl>0); // Make sure interrupt is disabled
     unsigned int temp;
     bitmap_alloc(swap_table, &temp);
+    swap_avail_page--;
     assert(temp < swapsize);
     return temp;
 }
@@ -85,12 +95,17 @@ swap_free_page(unsigned int file_frame)
     assert(curspl>0); // Make sure interrupt is disabled
     assert(bitmap_isset(swap_table, file_frame)); // This should always be true
     bitmap_unmark(swap_table, file_frame);
+    swap_avail_page++;
 }
 
 unsigned int
 swap_evict(void)
 {
     assert(curspl>0); // Make sure interrupt is disabled
+
+    if (swap_avail_page <= 400) { // We are out of swap -> out of memory
+        return ENOMEM;
+    }
 
     // Figure out which page to be removed from memory
     unsigned int pframe = coremap_page_to_evict();
@@ -101,16 +116,36 @@ swap_evict(void)
     // Update pte
     struct addrspace *as = coremap[pframe].as;
     unsigned int pt_index = coremap[pframe].pt_index;
-    if (pt_index >= array_getnum(as->page_table)) {
-        kprintf("Swap evict caused it!\n");
-        kprintf("pframe: %d\n", pframe);
-        kprintf("fileframe: %d\n", file_frame);
-        kprintf("Coremap entry:\n");
-        kprintf("status %d\n", coremap[pframe].status);
-        kprintf("kernel %d\n", coremap[pframe].kernel);
-        kprintf("as 0x%x\n", coremap[pframe].as);
-        kprintf("pt_index %d\n", coremap[pframe].pt_index);
+    struct page_table_entry *e = array_getguy(as->page_table, pt_index);
+    if (e->swapped != 0)
+    {
+    assert(e->swapped == 0); // Page shouldn't be swapped out already
     }
+    e->swapped = 1;
+    e->swap_file_frame = file_frame;
+    e->swap_coremap_ref_count = coremap[pframe].ref_count;
+
+    // Swap out the page
+    swap_store_page(pframe << PAGE_SHIFT, file_frame);
+
+    return 0;
+}
+
+unsigned int
+swap_evict_specific(unsigned int pframe)
+{
+    assert(curspl>0); // Make sure interrupt is disabled
+
+    if (swap_avail_page == 0) { // We are out of swap -> out of memory
+        return ENOMEM;
+    }
+
+    // Allocate a page in swap file
+    unsigned int file_frame = swap_alloc_page();
+
+    // Update pte
+    struct addrspace *as = coremap[pframe].as;
+    unsigned int pt_index = coremap[pframe].pt_index;
     struct page_table_entry *e = array_getguy(as->page_table, pt_index);
     assert(e->swapped == 0); // Page shouldn't be swapped out already
     e->swapped = 1;
@@ -120,5 +155,5 @@ swap_evict(void)
     // Swap out the page
     swap_store_page(pframe << PAGE_SHIFT, file_frame);
 
-    return pframe;
+    return 0;
 }

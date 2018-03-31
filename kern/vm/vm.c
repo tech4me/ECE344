@@ -25,6 +25,11 @@ fault_handler(vaddr_t faultaddress, int faulttype, int segment_index, unsigned i
     int found_flag = 0;
     struct array *a = as->page_table;
 
+    // This is to make sure we generate the right type of error, becuase we do on-demand paging
+    if (faulttype == VM_FAULT_WRITE && swap_get_avail_page_count() <= 400) {
+        return ENOMEM;
+    }
+
     // Iterate through our array and find the page table entry
     int i, err;
     struct page_table_entry *e;
@@ -50,7 +55,10 @@ fault_handler(vaddr_t faultaddress, int faulttype, int segment_index, unsigned i
                 // NOTE: We can't use the old method of modifying the TLB entry, because during page operation TLB can change
 
                 if (coremap_get_avail_page_count() == 0) { // Now we need to evict
-                    swap_evict();
+                    err = swap_evict();
+                    if (err) {
+                        return err;
+                    }
                 }
                 paddr = coremap_alloc_upage(i);
 
@@ -61,6 +69,11 @@ fault_handler(vaddr_t faultaddress, int faulttype, int segment_index, unsigned i
                     assert(e->swap_coremap_ref_count > 0); // This should be the case
                     swap_load_page(paddr, e->swap_file_frame, as, i, e->swap_coremap_ref_count);
                 }
+                // Update pte to reflect the swapin
+                e->swapped = 0;
+                e->swap_file_frame = -1;
+                e->swap_coremap_ref_count = 1;
+
                 e->pframe = paddr >> PAGE_SHIFT;
                 e->cow = 0; // No copy-on-write anymore
                 cow_flag = e->cow;
@@ -70,14 +83,16 @@ fault_handler(vaddr_t faultaddress, int faulttype, int segment_index, unsigned i
                     TLB_Write(TLBHI_INVALID(tlb_index), TLBLO_INVALID(), tlb_index);
                 }
             } else {
-                //kprintf("Swap in addr 0x%x\n", faultaddress);
                 // We need to bring the page back in from swap
                 // 1. Check if we have free page in memory
                 // 2. If we do just load the page
                 // 3. if we don't we evict and load the page
 
                 if (coremap_get_avail_page_count() == 0) { // Now we need to evict
-                    swap_evict();
+                    err = swap_evict();
+                    if (err) {
+                        return err;
+                    }
                 }
                 paddr = coremap_alloc_upage(i);
                 e->pframe = paddr >> PAGE_SHIFT;
@@ -102,7 +117,10 @@ fault_handler(vaddr_t faultaddress, int faulttype, int segment_index, unsigned i
                     paddr = e->pframe << PAGE_SHIFT;
                 } else {
                     if (coremap_get_avail_page_count() == 0) { // Now we need to evict
-                        swap_evict();
+                        err = swap_evict();
+                        if (err) {
+                            return err;
+                        }
                     }
                     paddr = coremap_alloc_upage(i);
                     memmove((void *)PADDR_TO_KVADDR(paddr), (const void *)PADDR_TO_KVADDR(e->pframe << PAGE_SHIFT), PAGE_SIZE);
@@ -124,19 +142,22 @@ fault_handler(vaddr_t faultaddress, int faulttype, int segment_index, unsigned i
         }
     } else {
         // Below is on-demand paging
-
-        // New with swap:
-        // 1. Check if we have free page in memory
-        // 2. If we do just allocate the new page
-        // 3. If we don't we evict and allocate the new page
-        if (coremap_get_avail_page_count() == 0) { // Now we need to evict
-            swap_evict();
-        }
-        paddr_t new_page = coremap_alloc_upage(array_getnum(a));
-        struct page_table_entry *entry = kmalloc(sizeof(struct page_table_entry));
+        // Here the order is very important, because both kmalloc and array_add might require additional page, and we can't have incomplete data structures
+        struct page_table_entry *entry = kmalloc(sizeof(struct page_table_entry)); // This might kick out the page that we just allocated, if done in the wrong order
         if (entry == NULL) {
             return ENOMEM;
         }
+        err = array_preallocate(a, array_getnum(a) + 1); // We preallocate here so later array_add will not evict
+        if (err) {
+            return err;
+        }
+        if (coremap_get_avail_page_count() == 0) { // Now we need to evict
+            err = swap_evict();
+            if (err) {
+                return err;
+            }
+        }
+        paddr_t new_page = coremap_alloc_upage(array_getnum(a));
         entry->vframe = faultaddress >> PAGE_SHIFT;
         entry->pframe = new_page >> PAGE_SHIFT;
         entry->permission = permission;
@@ -144,7 +165,7 @@ fault_handler(vaddr_t faultaddress, int faulttype, int segment_index, unsigned i
         entry->swapped = 0;
         entry->swap_file_frame = -1;
         entry->swap_coremap_ref_count = 1;
-        err = array_add(a, entry);
+        err = array_add(a, entry); // This array_add must not allocate new page, if that is the case then the page we just allocated still might get swapped out
         if (err) {
             return err;
         }
@@ -255,9 +276,13 @@ alloc_kpages(int npages)
         return PADDR_TO_KVADDR(paddr);
     }
     int spl = splhigh();
+    int err;
     unsigned int count = coremap_get_avail_page_count();
     while ((int)count < npages) {
-        swap_evict();
+        err = swap_evict();
+        if (err) {
+            return 0; // Out of memory
+        }
         count = coremap_get_avail_page_count();
     }
     vaddr_t vaddr = PADDR_TO_KVADDR(coremap_alloc_kpages(npages));
@@ -323,7 +348,6 @@ vm_fault(int faulttype, vaddr_t faultaddress)
     }
 
     if (!found_flag) {
-        //kprintf("Fault address: 0x%x not Found\n", faultaddress);
         splx(spl);
         return EFAULT;
     }

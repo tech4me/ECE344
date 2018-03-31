@@ -35,10 +35,7 @@ void *
 array_getguy(struct array *a, int index)
 {
     assert(a->num <= a->max);
-    if (index < 0 || index >= a->num) {
-        kprintf("Array size: %d, Trying to access: %d\n", a->num, index);
-        assert(index >=0 && index < a->num);
-    }
+    assert(index >=0 && index < a->num);
     return a->v[index];
 }
 

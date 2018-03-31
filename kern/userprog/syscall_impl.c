@@ -1,11 +1,12 @@
 #include <types.h>
 #include <lib.h>
+#include <machine/spl.h>
 #include <kern/limits.h>
 #include <kern/errno.h>
 #include <kern/unistd.h>
 #include <clock.h>
 #include <syscall.h>
-#include <coremap.h>
+#include <swap.h>
 #include <addrspace.h>
 #include <thread.h>
 #include <curthread.h>
@@ -156,22 +157,26 @@ sys_write(int fd, const void *buf, size_t nbytes, int *retval)
 int
 sys_sbrk(intptr_t amount, void **retval)
 {
+    int spl = splhigh();
     struct addrspace *as = curthread->t_vmspace;
     if ((int)as->as_heapsize + (int)amount < 0) { // Heapsize cannot be negative
         *retval = ((void *)-1);
+        splx(spl);
         return EINVAL;
     } else if ((int)as->as_heapsize + (int)amount > (int)(HEAPPAGES * PAGE_SIZE)) {
         *retval = ((void *)-1);
+        splx(spl);
         return ENOMEM;
     }
 
-    // TODO: Change this after implemented swap so btree -h can work
-    if (amount > 0 && ((unsigned int)(amount >> PAGE_SHIFT) > coremap_get_avail_page_count())) { // Exceed max number of page
+    if (amount > 0 && ((unsigned int)(amount >> PAGE_SHIFT) > swap_get_avail_page_count())) { // Exceed max number of page
         *retval = ((void *)-1);
+        splx(spl);
         return ENOMEM;
     }
     *retval = (void *)(as->as_heapbase + as->as_heapsize);
     as->as_heapsize = amount + (int)as->as_heapsize;
+    splx(spl);
     return 0;
 }
 

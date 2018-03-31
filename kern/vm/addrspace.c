@@ -27,12 +27,13 @@ as_create(void)
     // We pre-allocate 2 segments for the array which should be enough
     int err = array_preallocate(as->as_segments, 2);
     if (err) {
+        array_destroy(as->as_segments);
         kfree(as);
         return NULL;
     }
 
     // Create an empty arrray
-    a = array_create(); // TODO: Figure what is the correct size to pre-allocate
+    a = array_create();
     if (a == NULL) {
         return NULL;
     }

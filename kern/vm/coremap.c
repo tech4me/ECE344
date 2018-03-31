@@ -4,6 +4,7 @@
 #include <thread.h>
 #include <curthread.h>
 #include <machine/spl.h>
+#include <machine/tlb.h>
 
 struct coremap_entry *coremap = NULL;
 unsigned int page_count = 0;
@@ -82,7 +83,7 @@ coremap_stats(int nargs, char **arg)
 unsigned int
 coremap_get_avail_page_count(void)
 {
-    int spl = splhigh();
+    assert(curspl>0); // Make sure interrupt is disabled
     unsigned int i;
     unsigned int count = 0;
     for (i = 0; i < page_count; i++) {
@@ -90,7 +91,6 @@ coremap_get_avail_page_count(void)
             count++;
         }
     }
-    splx(spl);
     return count;
 }
 
@@ -99,49 +99,59 @@ coremap_alloc_pages(int npages, unsigned int kernel_or_user, unsigned int pt_ind
 {
     assert(curspl>0); // Make sure interrupt is disabled
 
-    assert(npages < 2); // Based on my test, kmalloc don't need more then 1 coutinous page, and user will never need continous page
-    // TODO Fix this to support continous paging
-
     // Here we need to look at which physical memory page is available
     // 1. Do we even have n pages available?
-    // 2. Are they continues?
-    unsigned int i, j;
+    // 2. Are they continous?
+    // 3. Now we need to swap out pages to get all the pages continous
+    // Note: because we only allocate multiple page for kernel, we want to try to make them together(not really that necessary)
+
+    unsigned int i, j, k;
     int count = 0;
     for (i = 0; i < page_count; i++) {
-        if (!coremap[i].status) {
-            count++;
-        }
-    }
-    if (count < npages) {
-        coremap_stats(0, NULL);
-        panic("coremap_alloc_pages failed: requires %d continous pages\n", npages); // TODO: remove this after swap
-        return (paddr_t)NULL;
-    }
-    for (i = 0; i < page_count; i++) {
-        if (!coremap[i].status) { // Found an empty page
+        if (!coremap[i].kernel) { // Found an non-kernel page since we can't move kernel pages
             // Now check if we have npages of continous page
             count = 0;
             for (j = i; j < i + npages; j++) {
-                if (!coremap[i].status) {
-                    count = 0;
-                } else {
+                if (coremap[i].kernel) {
                     count = 1;
                     break;
                 }
             }
-            if (!count) { // We are done
-                break;
+            if (count == 0) {
+                goto found_continous_pages;
             }
         }
     }
-    if (count == 1) {
-        coremap_stats(0, NULL);
-        panic("coremap_alloc_pages failed: requires %d continous pages\n", npages); // TODO: remove this after swap
-        return (paddr_t)NULL;
-    }
+    coremap_stats(0, NULL);
+    panic("coremap_alloc_pages failed: too many kernel pages already\n"); // We are done
 
-    // Now i is the offset we can use to start page allocation
+found_continous_pages:
+
+    kprintf("alloc_start page: %d\n", i);
+    // Moving page start froming i
     for (j = i; j < i + npages; j++) {
+        if (coremap[j].status) { // Page being used, need to move it to an available page
+            swap_evict_specific(j);
+            //for (k = 0; k < page_count; k++) {
+            //    kprintf("p: %d, ref_c: %d\n", k, coremap[k].ref_count);
+            //}
+            /*
+            for (k = 0; k < page_count; k++) {
+                struct page_table_entry *e = array_getguy(coremap[j].as->page_table, coremap[j].pt_index);
+                if (!coremap[k].status && (coremap[i].ref_count <= 1)) { // Found a free page
+                    // Copy page
+                    memmove((void *)PADDR_TO_KVADDR(k << PAGE_SHIFT), (const void *)PADDR_TO_KVADDR(j << PAGE_SHIFT), PAGE_SIZE);
+                    // Update pte to reflect
+                    kprintf("j: %d, cow:%d\n", j, e->cow);
+                    e->pframe = k;
+                    // Update coremap
+                    coremap[k] = coremap[j];
+                    // We need to flush TLB later
+                    break;
+                }
+            }
+            */
+        }
         if (j == i) {
             coremap[j].as = curthread->t_vmspace;
             coremap[j].pt_index = pt_index;
@@ -158,6 +168,7 @@ coremap_alloc_pages(int npages, unsigned int kernel_or_user, unsigned int pt_ind
             coremap[j].ref_count = 0;
         }
     }
+    TLB_Flush();
     return (i * PAGE_SIZE);
 }
 

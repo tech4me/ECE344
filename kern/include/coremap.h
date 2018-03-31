@@ -35,7 +35,8 @@ paddr_t coremap_alloc_pages(int npages, unsigned int kernel_or_user, unsigned in
 paddr_t coremap_alloc_page(unsigned int kernel_or_user, unsigned int pt_index);
 ///////////////////////////////////////////
 
-#define coremap_alloc_kpages(npages) coremap_alloc_pages(npages, 1, -1)
+//#define coremap_alloc_kpages(npages) coremap_alloc_pages(npages, 1, -1)
+#define coremap_alloc_kpages(npages) coremap_alloc_page(1, -1)
 #define coremap_alloc_kpage() coremap_alloc_page(1, -1)
 
 // This should never be called
