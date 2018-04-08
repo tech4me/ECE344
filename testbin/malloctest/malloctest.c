@@ -20,7 +20,7 @@
 #define SMALLSIZE   72
 #define MEDIUMSIZE  896
 #define BIGSIZE     16384
-#define HUGESIZE    (6 * 1024 * 1024)
+#define HUGESIZE    (4 * 1024 * 1024)
 
 /* Maximum amount of space per block we allow for indexing structures */
 #define OVERHEAD         32

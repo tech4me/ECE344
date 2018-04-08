@@ -4,6 +4,7 @@
 #include <machine/specialreg.h>
 #include <machine/pcb.h>
 #include <machine/spl.h>
+#include <coremap.h>
 #include <vm.h>
 #include <thread.h>
 #include <curthread.h>
@@ -190,6 +191,8 @@ mips_trap(struct trapframe *tf)
         trapcodenames[code]);
     kprintf("panic: EPC 0x%x, exception vaddr 0x%x\n",
         tf->tf_epc, tf->tf_vaddr);
+
+    coremap_stats(0, NULL);
 
     panic("I can't handle this... I think I'll just die now...\n");
 

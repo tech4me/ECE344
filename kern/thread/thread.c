@@ -7,6 +7,7 @@
 #include <array.h>
 #include <machine/spl.h>
 #include <machine/pcb.h>
+#include <synch.h>
 #include <thread.h>
 #include <curthread.h>
 #include <process.h>
@@ -34,6 +35,9 @@ struct array *zombies;
 
 /* Total number of outstanding threads. Does not count zombies[]. */
 static int numthreads;
+
+/* Used so that thread_destroy will not be done before thread_exit. */
+static struct lock *thread_destroy_lock;
 
 /*
  * Create a thread. This is used both to create the first thread's
@@ -78,6 +82,7 @@ thread_create(const char *name)
 void
 thread_destroy(struct thread *thread)
 {
+    lock_acquire(thread_destroy_lock);
     assert(thread != curthread);
 
     // These things are cleaned up in thread_exit.
@@ -90,6 +95,7 @@ thread_destroy(struct thread *thread)
 
     kfree(thread->t_name);
     kfree(thread);
+    lock_release(thread_destroy_lock);
 }
 
 
@@ -174,6 +180,11 @@ struct thread *
 thread_bootstrap(void)
 {
     struct thread *me;
+
+    thread_destroy_lock = lock_create("thread_destroy_lock");
+    if (thread_destroy_lock == NULL) {
+        panic("Cannot create thread_destroy_lock\n");
+    }
 
     /* Create the data structures we need. */
     sleepers = array_create();
@@ -451,6 +462,8 @@ thread_exit(void)
 
     splhigh();
 
+    lock_acquire(thread_destroy_lock);
+
     if (curthread->t_vmspace) {
         /*
          * Do this carefully to avoid race condition with
@@ -465,6 +478,8 @@ thread_exit(void)
         VOP_DECREF(curthread->t_cwd);
         curthread->t_cwd = NULL;
     }
+
+    lock_release(thread_destroy_lock);
 
     assert(numthreads>0);
     numthreads--;

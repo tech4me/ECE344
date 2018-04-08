@@ -34,19 +34,17 @@ coremap_init(void)
     unsigned int i;
     for (i = 0; i < page_count; i++) {
         if (i < start/PAGE_SIZE) {
-            coremap[i].as = NULL; // There is no corresponding address space for the kernel
-            coremap[i].pt_index = -1; // No process table for kernel
             coremap[i].status = 1; // Used
             coremap[i].kernel = 1; // Kernel
             coremap[i].block_page_count = 1; // The page itself
             coremap[i].ref_count = 1;
+            // coremap[i].ptes are init to zero already
         } else {
-            coremap[i].as = NULL; // There is no corresponding address space for the unmapped space
-            coremap[i].pt_index = -1; // Un-init
             coremap[i].status = 0; // Unused
             coremap[i].kernel = 0; // Not Kernel
             coremap[i].block_page_count = 0; // Not being allocated
             coremap[i].ref_count = 0;
+            // coremap[i].ptes are init to zero already
         }
     }
 }
@@ -95,9 +93,14 @@ coremap_get_avail_page_count(void)
 }
 
 paddr_t
-coremap_alloc_pages(int npages, unsigned int kernel_or_user, unsigned int pt_index)
+coremap_alloc_pages(int npages, unsigned int kernel_or_user, struct page_table_entry *pte)
 {
     assert(curspl>0); // Make sure interrupt is disabled
+
+    if (npages != 1) {
+        assert(npages == 1);
+    }
+    return coremap_alloc_page(kernel_or_user, pte);
 
     // Here we need to look at which physical memory page is available
     // 1. Do we even have n pages available?
@@ -153,15 +156,11 @@ found_continous_pages:
             */
         }
         if (j == i) {
-            coremap[j].as = curthread->t_vmspace;
-            coremap[j].pt_index = pt_index;
             coremap[j].status = 1;
             coremap[j].kernel = kernel_or_user;
             coremap[j].block_page_count = npages;
             coremap[j].ref_count = 1;
         } else {
-            coremap[j].as = curthread->t_vmspace;
-            coremap[j].pt_index = pt_index;
             coremap[j].status = 1;
             coremap[j].kernel = kernel_or_user;
             coremap[j].block_page_count = 0;
@@ -173,18 +172,17 @@ found_continous_pages:
 }
 
 paddr_t
-coremap_alloc_page(unsigned int kernel_or_user, unsigned int pt_index)
+coremap_alloc_page(unsigned int kernel_or_user, struct page_table_entry *pte)
 {
     assert(curspl>0); // Make sure interrupt is disabled
     int i;
     for (i = 0; i < (int)page_count; i++) {
         if (!coremap[i].status) { // Found an empty page
-            coremap[i].as = curthread->t_vmspace;
-            coremap[i].pt_index = pt_index;
             coremap[i].status = 1;
             coremap[i].kernel = kernel_or_user;
             coremap[i].block_page_count = 1;
             coremap[i].ref_count = 1;
+            coremap[i].ptes[0] = pte; // Set the first one
             return (i << PAGE_SHIFT);
         }
     }
@@ -193,7 +191,7 @@ coremap_alloc_page(unsigned int kernel_or_user, unsigned int pt_index)
 }
 
 void
-coremap_free_pages(paddr_t paddr)
+coremap_free_pages(paddr_t paddr, struct page_table_entry *pte)
 {
     assert(curspl>0); // Make sure interrupt is disabled
 
@@ -205,17 +203,31 @@ coremap_free_pages(paddr_t paddr)
     unsigned int pframe = paddr >> PAGE_SHIFT;
     // I thought the below assert was necessary, however one of the kernel page was freed by the OS
     //assert(pframe >= first_avail_page && pframe < page_count);
-    unsigned int i;
+    unsigned int i, j, k;
     for (i = 0; i < coremap[pframe].block_page_count; i++) {
         coremap[pframe + i].ref_count -= 1;
         assert(coremap[pframe + i].ref_count >= 0);
         if (coremap[pframe + i].ref_count == 0) {
             coremap[pframe + i].status = 0;
             coremap[pframe + i].kernel = 0;
-            coremap[pframe + i].as = NULL;
-            coremap[pframe + i].pt_index = -1;
             coremap[pframe + i].block_page_count = 0;
             coremap[pframe + i].ref_count = 0;
+            for (j = 0; j < MAX_SHARED_PAGE; j++) {
+                coremap[pframe + i].ptes[j] = NULL;
+            }
+        } else {
+            // Just remove the pte pointer
+            int flag = 0;
+            for (j = 0; j < MAX_SHARED_PAGE; j++) {
+                if (coremap[pframe + i].ptes[j] == pte) {
+                    for (k = j; k < MAX_SHARED_PAGE - 1; k++) {
+                        coremap[pframe + i].ptes[k] = coremap[pframe + i].ptes[k + 1];
+                    }
+                    flag = 1;
+                    break;
+                }
+            }
+            assert(flag);
         }
     }
 }
@@ -239,17 +251,16 @@ coremap_get_page_ref_count(paddr_t paddr)
 }
 
 void
-coremap_page_swap_in(paddr_t paddr, struct addrspace *as, unsigned int pt_index, unsigned int ref_count)
+coremap_page_swap_in(paddr_t paddr, struct page_table_entry *pte)
 {
     assert(curspl>0); // Make sure interrupt is disabled
 
     unsigned int pframe = paddr >> PAGE_SHIFT;
     coremap[pframe].status = 1;
     coremap[pframe].kernel = 0; // Kernel should never be swapped out in the first place
-    coremap[pframe].as = as;
-    coremap[pframe].pt_index = pt_index;
     coremap[pframe].block_page_count = 1;
-    coremap[pframe].ref_count = ref_count;
+    coremap[pframe].ref_count = 1; // No cow after swap
+    coremap[pframe].ptes[0] = pte;
 }
 
 void
@@ -260,10 +271,12 @@ coremap_page_swap_out(paddr_t paddr)
     unsigned int pframe = paddr >> PAGE_SHIFT;
     coremap[pframe].status = 0;
     coremap[pframe].kernel = 0; // Kernel should never be swapped out in the first place
-    coremap[pframe].as = NULL;
-    coremap[pframe].pt_index = -1;
     coremap[pframe].block_page_count = 0;
     coremap[pframe].ref_count = 0;
+    unsigned int j;
+    for (j = 0; j < MAX_SHARED_PAGE; j++) {
+        coremap[pframe].ptes[j] = NULL;
+    }
 }
 
 unsigned int
@@ -278,11 +291,14 @@ coremap_page_to_evict(void)
             count++;
         }
     }
+    assert(count > 0); // We are out of memory
     unsigned int index = random() % count;
     count = 0;
     for (i = 0; i < page_count; i++) {
         if (!coremap[i].kernel) { // Have to be not a kernel page, bad things might happen
             if (index == count) {
+                assert(coremap[i].status == 1);
+                assert(coremap[i].kernel == 0);
                 return i; // i is the page that we want to evict
             }
             count++;
@@ -290,4 +306,37 @@ coremap_page_to_evict(void)
     }
     assert(0); // Should not reach here
     return -1;
+}
+
+unsigned int
+coremap_page_to_evict_avoidance(unsigned int pframe)
+{
+    assert(curspl>0); // Make sure interrupt is disabled
+
+    // Right now we just return a random page TODO: Change this to be better such as aging
+    unsigned int i, count = 0;
+    for (i = 0; i < page_count; i++) {
+        if (!coremap[i].kernel && (i != pframe)) { // Have to be not a kernel page, bad things might happen
+            count++;
+        }
+    }
+    assert(count > 0); // We are out of memory
+    unsigned int index = random() % count;
+    count = 0;
+    for (i = 0; i < page_count; i++) {
+        if (!coremap[i].kernel && (i != pframe)) { // Have to be not a kernel page, bad things might happen
+            if (index == count) {
+                if (coremap[i].status != 1) {
+                    coremap_stats(0, NULL);
+                    assert(coremap[i].status == 1);
+                }
+                assert(coremap[i].kernel == 0);
+                return i; // i is the page that we want to evict
+            }
+            count++;
+        }
+    }
+    assert(0); // Should not reach here
+    return -1;
+
 }

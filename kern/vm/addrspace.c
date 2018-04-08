@@ -1,6 +1,7 @@
 #include <types.h>
 #include <kern/errno.h>
 #include <lib.h>
+#include <synch.h>
 #include <addrspace.h>
 #include <coremap.h>
 #include <swap.h>
@@ -32,12 +33,20 @@ as_create(void)
         return NULL;
     }
 
-    // Create an empty arrray
+    // Create an empty array
     a = array_create();
     if (a == NULL) {
         return NULL;
     }
     as->page_table = a;
+
+    err = array_preallocate(as->page_table, 512);
+    if (err) {
+        array_destroy(as->as_segments);
+        array_destroy(as->page_table);
+        kfree(as);
+        return NULL;
+    }
 
     as->as_heapbase = 0;
     as->as_heapsize = 0;
@@ -58,6 +67,7 @@ as_destroy(struct addrspace *as)
     }
     array_destroy(as->as_segments);
 
+    lock_acquire(swap_lock);
     // Free page table entries
     for (i = 0; i < array_getnum(as->page_table); i++) {
         struct page_table_entry *e = array_getguy(as->page_table, i);
@@ -66,11 +76,12 @@ as_destroy(struct addrspace *as)
             swap_free_page(e->swap_file_frame);
         } else {
             // Change the corresponding coremap entry
-            coremap_free_page(e->pframe << PAGE_SHIFT);
+            coremap_free_page(e->pframe << PAGE_SHIFT, e);
         }
         kfree(e);
     }
     array_destroy(as->page_table);
+    lock_release(swap_lock);
 
     kfree(as);
     splx(spl);
@@ -209,25 +220,53 @@ as_copy(struct addrspace *old, struct addrspace **ret)
         struct page_table_entry *old_pte = array_getguy(old->page_table, i);
         *new_pte = *old_pte; // Copy
 
-        // Copy-On-Write implementation
-        // 1. We increase the reference count for all the pages
-        // 2. Change cow bit to 1, so later tlb update will still maintain cow
-        // 3. We set all the pages we copied to be readonly (now write -> page fault)
-        coremap_inc_page_ref_count(old_pte->pframe << PAGE_SHIFT);
+        // Now we consider if the page we are trying to share is in memory or not
+        // If it is in memory then we do normal copy-on-write
+        // If it is in swap we just allocate a new page here forget about copy-on-write
 
-        old_pte->cow = 1;
-        new_pte->cow = 1;
+        int32_t ehi, elo;
+        if (!old_pte->swapped) {
+            // Copy-On-Write implementation
+            // 1. We increase the reference count for all the pages
+            // 2. Change cow bit to 1, so later tlb update will still maintain cow
+            // 3. We set all the pages we copied to be readonly (now write -> page fault)
 
-        u_int32_t ehi, elo;
-        ehi = old_pte->vframe << PAGE_SHIFT;
-        int tlb_index = TLB_Probe(ehi, 0); // eho not used pass 0
-        if (tlb_index >= 0) { // That means we found the corresponding entry in TLB
-            TLB_Read(&ehi, &elo, tlb_index);
-            // Make sure the entry we are chaning is valid
-            // The entry can be not dirty already when you forked once already
-            assert(elo & TLBLO_VALID);
-            elo &= ~TLBLO_DIRTY; // Make all page only accessable for reading
-            TLB_Write(ehi, elo, tlb_index);
+            // Make coremap entry also a pointer to the new_pte
+            //kprintf("PPage: %d, Insert: %x, into %d\n", old_pte->pframe, new_pte, coremap[old_pte->pframe].ref_count);
+            coremap[old_pte->pframe].ptes[coremap[old_pte->pframe].ref_count] = new_pte;
+
+            coremap_inc_page_ref_count(old_pte->pframe << PAGE_SHIFT);
+
+            old_pte->cow = 1;
+            new_pte->cow = 1;
+
+            ehi = old_pte->vframe << PAGE_SHIFT;
+
+            int tlb_index = TLB_Probe(ehi, 0); // eho not used pass 0
+            if (tlb_index >= 0) { // That means we found the corresponding entry in TLB
+                TLB_Read(&ehi, &elo, tlb_index);
+                // Make sure the entry we are chaning is valid
+                // The entry can be not dirty already when you forked once already
+                assert(elo & TLBLO_VALID);
+                elo &= ~TLBLO_DIRTY; // Make all page only accessable for reading
+                TLB_Write(ehi, elo, tlb_index);
+            }
+        } else {
+            assert(0);
+            if (coremap_get_avail_page_count() == 0) { // Now we need to evict
+                err = swap_evict();
+                if (err) {
+                    return err;
+                }
+            }
+            paddr_t paddr = coremap_alloc_upage(new_pte);
+            new_pte->pframe = paddr >> PAGE_SHIFT;
+            new_pte->cow = 0;
+            new_pte->swapped = 0;
+            new_pte->swap_file_frame = -1;
+
+            // Swapping in without freeing the page in pagefile
+            swap_load_page_without_free(paddr, old_pte->swap_file_frame, new_pte);
         }
         assert(array_add(new->page_table, new_pte) == 0);
     }
