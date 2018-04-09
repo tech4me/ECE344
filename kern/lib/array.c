@@ -31,6 +31,12 @@ array_getnum(struct array *a)
     return a->num;
 }
 
+int
+array_getmax(struct array *a)
+{
+    return a->max;
+}
+
 void *
 array_getguy(struct array *a, int index)
 {

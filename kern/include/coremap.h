@@ -3,7 +3,7 @@
 
 #include <addrspace.h>
 
-#define MAX_SHARED_PAGE 32
+#define MAX_SHARED_PAGE 24
 
 struct coremap_entry {
     //struct addrspace *as; // Which address space does this page belongs to

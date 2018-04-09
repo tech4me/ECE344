@@ -20,11 +20,13 @@ static paddr_t vm_alloc_page(struct page_table_entry *e)
     lock_acquire(swap_lock);
     if (coremap_get_avail_page_count() == 0) { // Now we need to evict
         if (swap_evict()) {
+            lock_release(swap_lock);
             return NULL;
         }
     }
     paddr_t paddr = coremap_alloc_upage(e);
     lock_release(swap_lock);
+    return paddr;
 }
 
 static
@@ -104,6 +106,7 @@ fault_handler(vaddr_t faultaddress, int faulttype, int segment_index, unsigned i
                 // 2. If we do just load the page
                 // 3. if we don't we evict and load the page
 
+                /*
                 if (coremap_get_avail_page_count() == 0) { // Now we need to evict
                     err = swap_evict();
                     if (err) {
@@ -111,6 +114,11 @@ fault_handler(vaddr_t faultaddress, int faulttype, int segment_index, unsigned i
                     }
                 }
                 paddr = coremap_alloc_upage(e);
+                */
+                paddr = vm_alloc_page(e);
+                if (paddr == NULL) {
+                    return ENOMEM;
+                }
                 e->pframe = paddr >> PAGE_SHIFT;
                 //kprintf("Loading pframe: %d\n", paddr >> 12);
                 swap_load_page(paddr, e->swap_file_frame, e);
@@ -132,6 +140,7 @@ fault_handler(vaddr_t faultaddress, int faulttype, int segment_index, unsigned i
                     paddr = e->pframe << PAGE_SHIFT;
                 } else {
                     if (coremap_get_avail_page_count() == 0) { // Now we need to evict
+                        assert(0);
                         err = swap_evict_avoidance(e->pframe);
                         if (err) {
                             return err;
@@ -162,10 +171,13 @@ fault_handler(vaddr_t faultaddress, int faulttype, int segment_index, unsigned i
         if (entry == NULL) {
             return ENOMEM;
         }
-        err = array_preallocate(a, array_getnum(a) + 1); // We preallocate here so later array_add will not evict
-        if (err) {
-            return err;
+        if (array_getmax(a) < array_getnum(a) + 1) {
+            err = array_preallocate(a, array_getnum(a) + 1); // We preallocate here so later array_add will not evict
+            if (err) {
+                return err;
+            }
         }
+        /*
         if (coremap_get_avail_page_count() == 0) { // Now we need to evict
             err = swap_evict();
             if (err) {
@@ -173,6 +185,12 @@ fault_handler(vaddr_t faultaddress, int faulttype, int segment_index, unsigned i
             }
         }
         paddr_t new_page = coremap_alloc_upage(entry);
+        */
+        paddr_t new_page = vm_alloc_page(entry);
+        if (new_page == NULL) {
+            return ENOMEM;
+        }
+
         //kprintf("Demand loading! pframe: %d, vframe: %d\n", new_page >> 12, faultaddress >> 12);
         entry->vframe = faultaddress >> PAGE_SHIFT;
         entry->pframe = new_page >> PAGE_SHIFT;
@@ -293,6 +311,7 @@ alloc_kpages(int npages)
         return PADDR_TO_KVADDR(paddr);
     }
     int spl = splhigh();
+    /*
     int err;
     unsigned int count = coremap_get_avail_page_count();
     while ((int)count < npages) {
@@ -302,6 +321,7 @@ alloc_kpages(int npages)
         }
         count = coremap_get_avail_page_count();
     }
+    */
     vaddr_t vaddr = PADDR_TO_KVADDR(coremap_alloc_kpages(npages));
     splx(spl);
     return vaddr;
@@ -311,7 +331,7 @@ void
 free_kpages(vaddr_t addr)
 {
     int spl = splhigh();
-    coremap_free_pages(VADDR_TO_KPADDR(addr), 0xdeadbeef);
+    coremap_free_pages(VADDR_TO_KPADDR(addr), NULL);
     splx(spl);
 }
 

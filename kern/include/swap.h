@@ -32,6 +32,6 @@ unsigned int swap_evict(void);
 unsigned int swap_evict_avoidance(unsigned int pframe);
 
 // Evict a specific page return 0 of success
-unsigned int swap_evict_specific(unsigned int avoid_pframe);
+unsigned int swap_evict_specific(unsigned int pframe);
 
 #endif

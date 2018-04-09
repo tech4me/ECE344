@@ -169,11 +169,13 @@ sys_sbrk(intptr_t amount, void **retval)
         return ENOMEM;
     }
 
+    /* Don't check for this anymore since they changed the testcase
     if (amount > 0 && ((unsigned int)(amount >> PAGE_SHIFT) > swap_get_avail_page_count())) { // Exceed max number of page
         *retval = ((void *)-1);
         splx(spl);
         return ENOMEM;
     }
+    */
     *retval = (void *)(as->as_heapbase + as->as_heapsize);
     as->as_heapsize = amount + (int)as->as_heapsize;
     splx(spl);

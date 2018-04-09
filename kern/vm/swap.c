@@ -133,10 +133,10 @@ swap_free_page(unsigned int file_frame)
 unsigned int
 swap_evict(void)
 {
-    lock_acquire(swap_lock);
+    //lock_acquire(swap_lock);
     assert(curspl>0); // Make sure interrupt is disabled
 
-    if (swap_avail_page <= 100) { // We are out of swap -> out of memory
+    if (swap_avail_page == 0) { // We are out of swap -> out of memory
         return ENOMEM;
     }
 
@@ -168,11 +168,10 @@ swap_evict(void)
         e->cow = 0; // No copy-on-write anymore
         e->swapped = 1;
         e->swap_file_frame = file_frame;
-
     }
     coremap_page_swap_out(pframe << PAGE_SHIFT);
 
-    lock_release(swap_lock);
+    //lock_release(swap_lock);
     return 0;
 }
 
@@ -182,7 +181,7 @@ swap_evict_avoidance(unsigned int avoid_pframe)
     assert(0);
     assert(curspl>0); // Make sure interrupt is disabled
 
-    if (swap_avail_page <= 100) { // We are out of swap -> out of memory
+    if (swap_avail_page == 0) { // We are out of swap -> out of memory
         return ENOMEM;
     }
 
@@ -212,40 +211,43 @@ swap_evict_avoidance(unsigned int avoid_pframe)
         e->cow = 0; // No copy-on-write anymore
         e->swapped = 1;
         e->swap_file_frame = file_frame;
-
     }
     coremap_page_swap_out(pframe << PAGE_SHIFT);
 
     return 0;
-
 }
 
 unsigned int
 swap_evict_specific(unsigned int pframe)
 {
-    assert(0);
-    /*
+    //lock_acquire(swap_lock);
     assert(curspl>0); // Make sure interrupt is disabled
 
     if (swap_avail_page == 0) { // We are out of swap -> out of memory
         return ENOMEM;
     }
 
-    // Allocate a page in swap file
-    unsigned int file_frame = swap_alloc_page();
+    // Update all the ptes because when swaping out page, we can't have shared pages anymore
+    unsigned int i;
+    for (i = 0; i < coremap[pframe].ref_count; i++) {
+        assert(i == 0); // Not testing i > 0 yet
 
-    // Update pte
-    struct addrspace *as = coremap[pframe].as;
-    unsigned int pt_index = coremap[pframe].pt_index;
-    struct page_table_entry *e = array_getguy(as->page_table, pt_index);
-    assert(e->swapped == 0); // Page shouldn't be swapped out already
-    e->swapped = 1;
-    e->swap_file_frame = file_frame;
-    e->swap_coremap_ref_count = coremap[pframe].ref_count;
+        // Allocate a page in swap file
+        unsigned int file_frame = swap_alloc_page();
 
-    // Swap out the page
-    swap_store_page(pframe << PAGE_SHIFT, file_frame);
+        // Swap out the page
+        swap_store_page(pframe << PAGE_SHIFT, file_frame);
 
+        struct page_table_entry *e = coremap[pframe].ptes[i];
+        if (e->swapped != 0) {
+            assert(e->swapped == 0); // Page shouldn't be swapped out already
+        }
+        e->cow = 0; // No copy-on-write anymore
+        e->swapped = 1;
+        e->swap_file_frame = file_frame;
+    }
+    coremap_page_swap_out(pframe << PAGE_SHIFT);
+
+    //lock_release(swap_lock);
     return 0;
-    */
 }

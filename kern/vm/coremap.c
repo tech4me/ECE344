@@ -1,6 +1,8 @@
 #include <types.h>
 #include <lib.h>
+#include <synch.h>
 #include <coremap.h>
+#include <swap.h>
 #include <thread.h>
 #include <curthread.h>
 #include <machine/spl.h>
@@ -95,12 +97,9 @@ coremap_get_avail_page_count(void)
 paddr_t
 coremap_alloc_pages(int npages, unsigned int kernel_or_user, struct page_table_entry *pte)
 {
+    lock_acquire(swap_lock);
     assert(curspl>0); // Make sure interrupt is disabled
-
-    if (npages != 1) {
-        assert(npages == 1);
-    }
-    return coremap_alloc_page(kernel_or_user, pte);
+    (void)pte; // pte won't be used because we know this is for kernel
 
     // Here we need to look at which physical memory page is available
     // 1. Do we even have n pages available?
@@ -108,14 +107,30 @@ coremap_alloc_pages(int npages, unsigned int kernel_or_user, struct page_table_e
     // 3. Now we need to swap out pages to get all the pages continous
     // Note: because we only allocate multiple page for kernel, we want to try to make them together(not really that necessary)
 
-    unsigned int i, j, k;
+    unsigned int i, j;
     int count = 0;
+    for (i = 0; i < page_count; i++) {
+        if (!coremap[i].status) { // Try to used unused pages first
+            // Now check if we have npages of continous page
+            count = 0;
+            for (j = i; j < i + npages; j++) {
+                if (coremap[j].status) {
+                    count = 1;
+                    break;
+                }
+            }
+            if (count == 0) {
+                goto found_continous_pages;
+            }
+        }
+    }
+    count = 0;
     for (i = 0; i < page_count; i++) {
         if (!coremap[i].kernel) { // Found an non-kernel page since we can't move kernel pages
             // Now check if we have npages of continous page
             count = 0;
             for (j = i; j < i + npages; j++) {
-                if (coremap[i].kernel) {
+                if (coremap[j].kernel) {
                     count = 1;
                     break;
                 }
@@ -130,14 +145,11 @@ coremap_alloc_pages(int npages, unsigned int kernel_or_user, struct page_table_e
 
 found_continous_pages:
 
-    kprintf("alloc_start page: %d\n", i);
     // Moving page start froming i
     for (j = i; j < i + npages; j++) {
         if (coremap[j].status) { // Page being used, need to move it to an available page
+            assert(coremap[j].kernel == 0); // Must not be kernel
             swap_evict_specific(j);
-            //for (k = 0; k < page_count; k++) {
-            //    kprintf("p: %d, ref_c: %d\n", k, coremap[k].ref_count);
-            //}
             /*
             for (k = 0; k < page_count; k++) {
                 struct page_table_entry *e = array_getguy(coremap[j].as->page_table, coremap[j].pt_index);
@@ -164,10 +176,10 @@ found_continous_pages:
             coremap[j].status = 1;
             coremap[j].kernel = kernel_or_user;
             coremap[j].block_page_count = 0;
-            coremap[j].ref_count = 0;
+            coremap[j].ref_count = 1;
         }
     }
-    TLB_Flush();
+    lock_release(swap_lock);
     return (i * PAGE_SIZE);
 }
 
@@ -204,7 +216,8 @@ coremap_free_pages(paddr_t paddr, struct page_table_entry *pte)
     // I thought the below assert was necessary, however one of the kernel page was freed by the OS
     //assert(pframe >= first_avail_page && pframe < page_count);
     unsigned int i, j, k;
-    for (i = 0; i < coremap[pframe].block_page_count; i++) {
+    unsigned int block_page_count = coremap[pframe].block_page_count;
+    for (i = 0; i < block_page_count; i++) {
         coremap[pframe + i].ref_count -= 1;
         assert(coremap[pframe + i].ref_count >= 0);
         if (coremap[pframe + i].ref_count == 0) {
