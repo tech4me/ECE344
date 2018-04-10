@@ -40,6 +40,26 @@ process_bootstrap(void)
     }
 }
 
+int
+process_stats(int nargs, char **arg)
+{
+    // Unused parameters
+    (void)nargs;
+    (void)arg;
+    int spl = splhigh(); // Disable interrupt when printing
+
+    kprintf("Printing process table entries\n");
+    int i;
+    for (i = 0; i < array_getnum(process_table); i++) {
+        struct process *p = array_getguy(process_table, i);
+        if (p != NULL) {
+            kprintf("Process pid:%d, ppid:%d, exited:%d, adopted:%d\n", p->pid, p->ppid, p->exited_flag, p->adopted_flag);
+        }
+    }
+    splx(spl);
+    return 0;
+}
+
 struct process *
 process_create(struct thread * thread)
 {

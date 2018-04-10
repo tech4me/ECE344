@@ -18,6 +18,9 @@ struct process {
 // Boot process start sequence
 void process_bootstrap(void);
 
+// Print process related stats
+int process_stats(int nargs, char **arg);
+
 // Helper to create new process
 struct process * process_create(struct thread *thread);
 

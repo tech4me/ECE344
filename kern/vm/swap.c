@@ -48,7 +48,7 @@ swap_get_avail_page_count(void)
 void
 swap_load_page(paddr_t paddr, unsigned int file_frame, struct page_table_entry *pte)
 {
-    lock_acquire(swap_lock);
+    //lock_acquire(swap_lock);
     assert(curspl>0); // Make sure interrupt is disabled
 
     //kprintf("Swapping in! pframe: %d, vframe: %d\n", paddr >> 12, pte->vframe);
@@ -69,13 +69,13 @@ swap_load_page(paddr_t paddr, unsigned int file_frame, struct page_table_entry *
 
     // Free the swap page
     swap_free_page(file_frame);
-    lock_release(swap_lock);
+    //lock_release(swap_lock);
 }
 
 void
 swap_load_page_without_free(paddr_t paddr, unsigned int file_frame, struct page_table_entry *pte)
 {
-    lock_acquire(swap_lock);
+    //lock_acquire(swap_lock);
     assert(curspl>0); // Make sure interrupt is disabled
 
     //kprintf("Swapping in without free! pframe: %d, vframe: %d\n", paddr >> 12, pte->vframe);
@@ -89,7 +89,7 @@ swap_load_page_without_free(paddr_t paddr, unsigned int file_frame, struct page_
 
     // Update coremap here to reflect the change
     coremap_page_swap_in(paddr, pte);
-    lock_release(swap_lock);
+    //lock_release(swap_lock);
 }
 
 void
@@ -140,10 +140,6 @@ swap_evict(void)
         return ENOMEM;
     }
 
-    //unsigned int k;
-    //for (k = 0; k <128; k++)
-    //    kprintf("coremap: %d,ref_count: %d\n", k, coremap[k].ref_count);
-
     // Figure out which page to be removed from memory
     unsigned int pframe = coremap_page_to_evict();
     //kprintf("Planning to swap %d\n", pframe);
@@ -162,6 +158,9 @@ swap_evict(void)
         struct page_table_entry *e = coremap[pframe].ptes[i];
         //kprintf("kernel: %d pframe: %d, pte: 0x%x\n", coremap[pframe].kernel, pframe, e);
         //kprintf("Swapping out! pframe: %d, vframe: %d, i: %d\n", pframe, e->vframe, i);
+        if (!coremap[pframe].status) {
+            assert(coremap[pframe].status == 1); // Should only swapout used page
+        }
         if (e->swapped != 0) {
             assert(e->swapped == 0); // Page shouldn't be swapped out already
         }

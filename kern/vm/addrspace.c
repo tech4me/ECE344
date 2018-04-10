@@ -67,7 +67,7 @@ as_destroy(struct addrspace *as)
     }
     array_destroy(as->as_segments);
 
-    lock_acquire(swap_lock);
+    lock_acquire(vm_fault_lock);
     // Free page table entries
     for (i = 0; i < array_getnum(as->page_table); i++) {
         struct page_table_entry *e = array_getguy(as->page_table, i);
@@ -81,7 +81,7 @@ as_destroy(struct addrspace *as)
         kfree(e);
     }
     array_destroy(as->page_table);
-    lock_release(swap_lock);
+    lock_release(vm_fault_lock);
 
     kfree(as);
     splx(spl);
@@ -206,7 +206,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 
     // Deep copy page table
     old_size = array_getnum(old->page_table);
-    err = array_preallocate(new->page_table, old_size); // We pre-allocate so future array_add will not fail
+    err = array_preallocate(new->page_table, array_getmax(old->page_table)); // We pre-allocate so future array_add will not fail
     if (err) {
         splx(spl);
         return err;

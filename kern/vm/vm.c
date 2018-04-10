@@ -12,12 +12,12 @@
 #include <machine/spl.h>
 #include <machine/tlb.h>
 
+struct lock *vm_fault_lock;
 static int vm_bootstrap_flag = 0;
-static struct lock *vm_fault_lock;
 
 static paddr_t vm_alloc_page(struct page_table_entry *e)
 {
-    lock_acquire(swap_lock);
+    //lock_acquire(swap_lock);
     if (coremap_get_avail_page_count() == 0) { // Now we need to evict
         if (swap_evict()) {
             lock_release(swap_lock);
@@ -25,7 +25,7 @@ static paddr_t vm_alloc_page(struct page_table_entry *e)
         }
     }
     paddr_t paddr = coremap_alloc_upage(e);
-    lock_release(swap_lock);
+    //lock_release(swap_lock);
     return paddr;
 }
 
@@ -33,8 +33,15 @@ static
 int
 fault_handler(vaddr_t faultaddress, int faulttype, int segment_index, unsigned int permission, struct addrspace *as)
 {
+    lock_acquire(vm_fault_lock);
     assert(curspl>0); // Make sure interrupt is disabled
 
+    /*
+    if (coremap_get_avail_page_count() <= 1) {
+        kprintf("Curthread: 0x%x\n", curthread);
+        print_run_queue();
+    }
+    */
     u_int32_t ehi, elo;
 
     paddr_t paddr = 0;
@@ -120,9 +127,9 @@ fault_handler(vaddr_t faultaddress, int faulttype, int segment_index, unsigned i
                     return ENOMEM;
                 }
                 e->pframe = paddr >> PAGE_SHIFT;
-                //kprintf("Loading pframe: %d\n", paddr >> 12);
                 swap_load_page(paddr, e->swap_file_frame, e);
 
+                assert(e->cow == 0); // Page from swap should not be cow
                 cow_flag = e->cow;
             }
         } else {
@@ -206,6 +213,7 @@ fault_handler(vaddr_t faultaddress, int faulttype, int segment_index, unsigned i
         // Now change paddr
         paddr = entry->pframe << PAGE_SHIFT;
         cow_flag = entry->cow;
+        lock_release(vm_fault_lock);
 
         if (segment_index >= 0) { // Page haven't been read from disk yet
             // Add entry into TLB so we can load page
@@ -243,6 +251,7 @@ fault_handler(vaddr_t faultaddress, int faulttype, int segment_index, unsigned i
             return 0;
         }
     }
+    lock_release(vm_fault_lock);
 
     /* make sure it's page-aligned */
     assert((paddr & PAGE_FRAME)==paddr);

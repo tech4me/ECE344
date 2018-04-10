@@ -580,6 +580,7 @@ static struct {
     /* stats */
     { "kh",         cmd_kheapstats },
     { "cm",         coremap_stats },
+    { "ps",         process_stats },
 
     /* base system tests */
     { "at",     arraytest },
