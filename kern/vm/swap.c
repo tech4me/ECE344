@@ -172,6 +172,7 @@ swap_evict_avoidance(unsigned int avoid_pframe)
     // Update all the ptes because when swaping out page, we can't have shared pages anymore
     unsigned int i;
     for (i = 0; i < coremap[pframe].ref_count; i++) {
+        assert(i == 0); // Not testing i > 0 yet
 
         // Allocate a page in swap file
         unsigned int file_frame = swap_alloc_page();
@@ -210,9 +211,6 @@ swap_evict_specific(unsigned int pframe)
         swap_store_page(pframe << PAGE_SHIFT, file_frame);
 
         struct page_table_entry *e = coremap[pframe].ptes[i];
-        if (e->swapped != 0) {
-            assert(e->swapped == 0); // Page shouldn't be swapped out already
-        }
         e->cow = 0; // No copy-on-write anymore
         e->swapped = 1;
         e->swap_file_frame = file_frame;
