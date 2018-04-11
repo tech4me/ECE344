@@ -1,0 +1,90 @@
+#!/usr/bin/perl
+
+# Let's get the group data and from there we get the utorids
+# and from there we get the email address and append them to one file
+
+#Should only be run on the ug machines
+
+$loc = "/cad2/ece344f/results";
+$roster = "$loc/roster.csv";
+
+$group_cmd = "grep \"^os-\" /etc/group 2>/dev/null";
+@instructors = ("ashvin", "ganjalia", "gianidha", "huangw23", "kumarak7",
+                   "shariatm", "huangzh9", "tim", "e344mark");
+
+sub run_process {
+    local ($cmd) = @_;
+    local ($err, $output);
+    $output = `$cmd`;
+    $err = $?;
+    $err = $err >> 8;
+    if ($err) {
+        print STDERR "$cmd: returned error = $err\n";
+    }
+    return ($err, $output);
+}
+
+#Total number of groups
+$group_start = 1;
+$group_end = 39;
+
+
+open(GROUP, "-|", $group_cmd) || die "$group_cmd: $!\n";
+
+while (<GROUP>) {
+    if (/^os-(.*):.*:.*:(.*)/) {
+        $nr = $1;
+        if ($nr < $group_start) {
+            next;
+        }
+        if ($nr > $group_end) {
+            next;
+        }
+        @names = split(/,/, $2);
+        @members = ();
+        for ($i = 0; $i <= $#names; $i++) {
+            if ($names[$i] ~~ @instructors) {
+                next;
+            }
+            if (defined $group_nr{$names[$i]}) {
+                die "$names[$i] is already defined in " . 
+                    "group $group_rn{$names[$i]}\n";
+            }
+	    if ($#names == 0) {
+		    next;
+	    }
+            # $group_nr{$names[$i]} = $nr;
+            # $group_submissions[$nr] = 0;
+            $group_members[$nr][$i] = $names[$i];
+            ($err, $email_line) = &run_process("grep $names[$i] $roster");
+	    if ($err) {
+		    next;
+	    }
+            @emails = split(/,/, $email_line);
+            chop($emails[4]);
+            $email[$nr][$i] = $emails[4];
+            if ($err > 0) {
+               next; 
+            }
+        }
+	#print "nr = $nr, ";
+	print $nr, ", ";
+        for ($i = 0; $i <= $#{$email[$nr]}; $i++) {
+	    print $group_members[$nr][$i], ", ";
+            print $email[$nr][$i], ", ";
+        }
+	print "\n";
+    }
+}
+close(GROUP);
+exit 0;
+
+# for i in `seq -f "%03g" ${START} ${END}`
+# do
+# 	#Someone could use sed/awk, but I think I just prefer this
+# 	UTOR1=`grep os-${i} /etc/group | cut -d ":" -f 4 | cut -d "," -f1`
+# 	UTOR2=`grep os-${i} /etc/group | cut -d ":" -f 4 | cut -d "," -f2`
+# 	EMAIL1=`grep ${UTOR1} ${ROSTER}`
+# 	EMAIL2=`grep ${UTOR2} ${ROSTER}`
+# 	echo "os-${i},${EMAIL1},${EMAIL2}" >> ${EMAIL}
+# done

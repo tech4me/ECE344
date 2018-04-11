@@ -1,0 +1,272 @@
+#!/bin/bash
+#
+# os161-tester
+#
+# automatically runs a set of testing scripts for os161 assignments and 
+# generate marks and log files
+#
+# Authors:
+#
+# Kuei (Jack) Sun   <kuei.sun@mail.utoronto.ca>
+# Prof. Ding Yuan   <yuan@ece.utoronto.ca>
+# Prof. Ashvin Goel <ashvin@eecg.utoronto.edu>
+#
+# University of Toronto
+# 2016
+#
+
+# =========
+# Variables
+# =========
+
+# change where the tester is installed (can override with the -p option)
+TESTER_PATH=/root/ece344/tester
+
+# change the install path to where sys161 is installed
+OS161_PATH=/root/cs161/bin
+
+# svn repo path
+SVN_REP=svn+ssh://ug250.eecg.utoronto.ca/srv/ece344s
+
+# number of repositories, starting from 1
+NR_REPS=100
+
+# os-161 version
+OS161_VERSION=1.11
+
+# ===============================================
+# Tester Script (Do not change unless bug fixing)
+# ===============================================
+
+PROG=$(basename $0)
+
+function usage() {
+    echo "Usage: $PROG [-hvVm] [-s start] [-e end] assignment_nr [test]" 1>&2;
+    echo "           -h: show this message" 1>&2;
+    echo "           -v: verbose" 1>&2;
+    echo "           -V: very verbose" 1>&2;
+    echo "           -m: run marker" 1>&2;
+    echo "     -s start: run marker starting from group 'start'" 1>&2;
+    echo "       -e end: run marker until group 'end'" 1>&2;
+    echo "      -p path: specify tester install path" 1>&2;
+    echo "assignment_nr: must be 0, 1, 2 or 3" 1>&2;
+    echo "         test: specify a test by name to run" 1>&2;
+    exit 1;
+}
+
+# getopts processing
+while getopts "hvVms:e:p:" ARG ; do
+    if [ ${ARG} = 'v' ]; then
+        if [ -z "$VERBOSE" ]; then
+            VERBOSE=1;
+        fi
+    elif [ ${ARG} = 'p' ]; then
+        TESTER_PATH=$OPTARG;
+    elif [ ${ARG} = 'V' ]; then
+        VERBOSE=2
+    elif [ ${ARG} = 'm' ]; then
+        MARKER=1;
+    elif [ ${ARG} = 's' ]; then
+        if [ -z "$MARKER" ]; then
+            usage;
+        fi
+        START=$OPTARG;
+        if ! [[ "$START" =~ ^[0-9]+$ ]] ; then
+            usage;
+        fi
+    elif [ ${ARG} = 'e' ]; then
+        if [ -z "$MARKER" ]; then
+            usage;
+        fi
+        END=$OPTARG;
+        if ! [[ "$END" =~ ^[0-9]+$ ]] ; then
+            usage;
+        fi
+    elif [ ${ARG} = 'h' ]; then
+        usage;
+    else
+        usage;
+    fi
+done
+
+# the tester executables
+BIN_PATH=${TESTER_PATH}/bin
+
+# where the scripts are
+SCRIPT_PATH=${TESTER_PATH}/scripts
+
+#setup the path, making sure that our path is first
+export PATH=$BIN_PATH:$OS161_PATH:/usr/local/bin:/local/bin:/usr/bin:/bin
+
+# this affects tester scripts' verbose level
+export OS161_TESTER_VERBOSE=$VERBOSE
+
+shift $((OPTIND-1))
+
+if [ $# -eq 0 -o $# -gt 2  ]; then
+    echo "$PROG: Incorrect number of positional arguments"
+    usage;
+fi
+
+if [ $1 != "0" -a $1 != "1" -a $1 != "2" -a $1 != "3" ]; then
+    echo "$PROG: Invalid assignment number $1"
+    usage;
+fi
+
+ASSIGNMENT=$1
+TESTNAME="-"
+
+if [ $# -eq 2 ]; then
+    if [ "$MARKER" == "1" ]; then
+        echo "$PROG: Warning, running only $2 in marker mode"
+    fi
+    TESTNAME=$2
+fi
+
+if [ -z "$START" ]; then
+    START=0
+fi
+
+if [ -z "$END" ]; then
+    END=$NR_REPS
+fi
+
+# stop the marker as soon as someone signals (e.g., Ctrl + C)
+function shutdown {
+    if [ -z "$MARKER" ]; then
+        echo "Stopping marker"   
+    else
+        echo "Stopping tester"
+    fi
+    exit 0
+}
+   
+# this will catch signals and stop the tester
+trap 'shutdown' 1 2 3 9 15
+   
+# run tests for a given assignment
+os161_tester() {
+    
+    # make sure that we are in the correct OS161 root directory
+    if [ ! -f kernel ]; then
+        echo "$PROG: The os161 kernel executable does not exist in this directory. Run this script from the OS161 root directory." 1>&2;
+        return 1;
+    fi
+    if [ ! -x kernel ]; then
+        echo "$PROG: The os161 kernel executable in this directory is not executable. Run this script from the OS161 root directory." 1>&2;
+        return 1;
+    fi
+
+    if [ -e os161.log ]; then
+        /bin/rm os161.log
+    fi
+
+    if [ -e os161-mark.txt ]; then
+        /bin/rm os161-mark.txt
+    fi
+
+    if [ "$TESTNAME" != "-" ]; then
+        echo "Running $TESTNAME for Assignment $ASSIGNMENT"
+    else    
+        echo "Running all tests for Assignment $ASSIGNMENT"
+    fi
+    
+    for test in ${SCRIPT_PATH}/asst${ASSIGNMENT}-*${TESTNAME}*.py; do
+        if [ -x $test ]; then
+            echo "Running: $test"
+            $test
+            echo
+        fi
+    done
+
+    if [ -e os161-mark.txt ]; then
+        awk -F "," 'BEGIN{total=0;mark=0}{total+=$2; mark+=$3}END{print "You received " mark " marks out of " total}' os161-mark.txt
+    fi
+}
+
+# for students, this will dry run the marker, i.e., it will run the svn
+# checkout, build, etc., and then run the tester programs
+os161_marker() {
+    GROUP="$1"
+
+    # remember current dir
+    echo "Checking out repo for os-${GROUP}"
+    pushd .
+
+    # create a new directory for the group
+    /bin/rm -rf os-${GROUP} && mkdir -p os-${GROUP} && cd os-${GROUP}
+
+    # get the user-level programs, and apply any patches
+    tar -zxf ${TESTER_PATH}/src/os161-$OS161_VERSION.tar.gz && cd os161-$OS161_VERSION
+
+    # remove the kern directory
+    rm -rf kern
+
+    # now checkout kern directory from repository
+    SVN_PATH=$SVN_REP/os-${GROUP}/svn/tags/asst${ASSIGNMENT}-end/kern
+    svn co $SVN_PATH
+
+    # make sure that the checkout is successful
+    if [ $? -eq 0 ] ; then
+        # compile os161
+        BUILD_PATH=$(pwd)/../root
+
+        ./configure --ostree=$BUILD_PATH && make -s
+    
+        # configure the kernel
+        pushd kern/conf
+        ./config ASST${ASSIGNMENT}
+        popd
+    
+        # build the kernel
+        cd kern/compile/ASST${ASSIGNMENT} && make -s depend && make -s && \
+            make -s install
+
+        # setup the correct config file
+        cd $BUILD_PATH && \
+            cp ${TESTER_PATH}/sysconfig/sys161-asst${ASSIGNMENT}.conf sys161.conf
+
+        # run the tester
+        os161_tester ${ASSIGNMENT} > ../../os161-tester-${GROUP}.log
+        if [ -e "os161.log" ]; then
+        /bin/cp os161.log ../../os161-${GROUP}.log
+        else
+            echo "os161.log not found"
+        fi
+        if [ -e "os161-mark.txt" ]; then
+        /bin/cp os161-mark.txt ../../os161-mark-${GROUP}.txt
+        else
+            echo "os161-mark.txt not found"
+        fi
+    fi
+
+    # pop back to top dir
+    popd
+    /bin/rm -rf os-${GROUP}
+}
+
+# ====
+# main
+# ====
+
+if [ -z "$MARKER" ]; then
+    # run tester directly
+    os161_tester
+else
+    if [ ! -e "${TESTER_PATH}/src/os161-$OS161_VERSION.tar.gz" ]; then
+        echo "$PROG: The os161 tar file does not exist. Please report this to a TA"
+        exit 1
+    fi
+
+    # run the marker for each group
+    for GROUP in $(seq -f "%03g" ${START} ${END}); do
+        # do we have access to the repository?
+        # students will have access to only their repository
+        if expr "$(groups)" : ".*os-${GROUP}" > /dev/null; then
+            echo "Output being sent to os161-marker-${GROUP}.log, os161-tester-${GROUP}.log, os161-${GROUP}.log and os161-mark-${GROUP}.txt"
+            os161_marker $GROUP > os161-marker-${GROUP}.log 2>&1
+        fi
+    done
+fi
+exit 0
+
