@@ -232,7 +232,6 @@ as_copy(struct addrspace *old, struct addrspace **ret)
             // 3. We set all the pages we copied to be readonly (now write -> page fault)
 
             // Make coremap entry also a pointer to the new_pte
-            //kprintf("PPage: %d, Insert: %x, into %d\n", old_pte->pframe, new_pte, coremap[old_pte->pframe].ref_count);
             coremap[old_pte->pframe].ptes[coremap[old_pte->pframe].ref_count] = new_pte;
 
             coremap_inc_page_ref_count(old_pte->pframe << PAGE_SHIFT);

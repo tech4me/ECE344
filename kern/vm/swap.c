@@ -48,10 +48,8 @@ swap_get_avail_page_count(void)
 void
 swap_load_page(paddr_t paddr, unsigned int file_frame, struct page_table_entry *pte)
 {
-    //lock_acquire(swap_lock);
     assert(curspl>0); // Make sure interrupt is disabled
 
-    //kprintf("Swapping in! pframe: %d, vframe: %d\n", paddr >> 12, pte->vframe);
     struct uio u;
     // Need to work within kernel space
     mk_kuio(&u, (void *)PADDR_TO_KVADDR(paddr), PAGE_SIZE, file_frame << PAGE_SHIFT, UIO_READ);
@@ -69,16 +67,13 @@ swap_load_page(paddr_t paddr, unsigned int file_frame, struct page_table_entry *
 
     // Free the swap page
     swap_free_page(file_frame);
-    //lock_release(swap_lock);
 }
 
 void
 swap_load_page_without_free(paddr_t paddr, unsigned int file_frame, struct page_table_entry *pte)
 {
-    //lock_acquire(swap_lock);
     assert(curspl>0); // Make sure interrupt is disabled
 
-    //kprintf("Swapping in without free! pframe: %d, vframe: %d\n", paddr >> 12, pte->vframe);
     struct uio u;
     // Need to work within kernel space
     mk_kuio(&u, (void *)PADDR_TO_KVADDR(paddr), PAGE_SIZE, file_frame << PAGE_SHIFT, UIO_READ);
@@ -89,7 +84,6 @@ swap_load_page_without_free(paddr_t paddr, unsigned int file_frame, struct page_
 
     // Update coremap here to reflect the change
     coremap_page_swap_in(paddr, pte);
-    //lock_release(swap_lock);
 }
 
 void
@@ -133,7 +127,6 @@ swap_free_page(unsigned int file_frame)
 unsigned int
 swap_evict(void)
 {
-    //lock_acquire(swap_lock);
     assert(curspl>0); // Make sure interrupt is disabled
 
     if (swap_avail_page == 0) { // We are out of swap -> out of memory
@@ -142,7 +135,6 @@ swap_evict(void)
 
     // Figure out which page to be removed from memory
     unsigned int pframe = coremap_page_to_evict();
-    //kprintf("Planning to swap %d\n", pframe);
 
     // Update all the ptes because when swaping out page, we can't have shared pages anymore
     unsigned int i;
@@ -156,35 +148,23 @@ swap_evict(void)
         swap_store_page(pframe << PAGE_SHIFT, file_frame);
 
         struct page_table_entry *e = coremap[pframe].ptes[i];
-        //kprintf("kernel: %d pframe: %d, pte: 0x%x\n", coremap[pframe].kernel, pframe, e);
-        //kprintf("Swapping out! pframe: %d, vframe: %d, i: %d\n", pframe, e->vframe, i);
-        if (!coremap[pframe].status) {
-            assert(coremap[pframe].status == 1); // Should only swapout used page
-        }
-        if (e->swapped != 0) {
-            assert(e->swapped == 0); // Page shouldn't be swapped out already
-        }
         e->cow = 0; // No copy-on-write anymore
         e->swapped = 1;
         e->swap_file_frame = file_frame;
     }
     coremap_page_swap_out(pframe << PAGE_SHIFT);
 
-    //lock_release(swap_lock);
     return 0;
 }
 
 unsigned int
 swap_evict_avoidance(unsigned int avoid_pframe)
 {
-    assert(0);
     assert(curspl>0); // Make sure interrupt is disabled
 
     if (swap_avail_page == 0) { // We are out of swap -> out of memory
         return ENOMEM;
     }
-
-    //kprintf("In swap_evict_avoidance:\n");
 
     // Figure out which page to be removed from memory
     unsigned int pframe = coremap_page_to_evict_avoidance(avoid_pframe);
@@ -200,13 +180,6 @@ swap_evict_avoidance(unsigned int avoid_pframe)
         swap_store_page(pframe << PAGE_SHIFT, file_frame);
 
         struct page_table_entry *e = coremap[pframe].ptes[i];
-        //kprintf("Swapping out: %d, i: %d\n", pframe, i);
-        if (e->swapped != 0) {
-            assert(e->swapped == 0); // Page shouldn't be swapped out already
-        }
-        if (e->cow) {
-            kprintf("Swapping out cow\n");
-        }
         e->cow = 0; // No copy-on-write anymore
         e->swapped = 1;
         e->swap_file_frame = file_frame;
@@ -219,7 +192,6 @@ swap_evict_avoidance(unsigned int avoid_pframe)
 unsigned int
 swap_evict_specific(unsigned int pframe)
 {
-    //lock_acquire(swap_lock);
     assert(curspl>0); // Make sure interrupt is disabled
 
     if (swap_avail_page == 0) { // We are out of swap -> out of memory
@@ -247,6 +219,5 @@ swap_evict_specific(unsigned int pframe)
     }
     coremap_page_swap_out(pframe << PAGE_SHIFT);
 
-    //lock_release(swap_lock);
     return 0;
 }

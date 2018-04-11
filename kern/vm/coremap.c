@@ -126,11 +126,11 @@ coremap_alloc_pages(int npages, unsigned int kernel_or_user, struct page_table_e
     }
     count = 0;
     for (i = 0; i < page_count; i++) {
-        if (!coremap[i].kernel) { // Found an non-kernel page since we can't move kernel pages
+        if (!coremap[i].kernel && (coremap[i].ref_count == 1)) { // Found an non-kernel page since we can't move kernel pages
             // Now check if we have npages of continous page
             count = 0;
             for (j = i; j < i + npages; j++) {
-                if (coremap[j].kernel) {
+                if (coremap[j].kernel && (coremap[i].ref_count == 1)) {
                     count = 1;
                     break;
                 }
@@ -150,22 +150,6 @@ found_continous_pages:
         if (coremap[j].status) { // Page being used, need to move it to an available page
             assert(coremap[j].kernel == 0); // Must not be kernel
             swap_evict_specific(j);
-            /*
-            for (k = 0; k < page_count; k++) {
-                struct page_table_entry *e = array_getguy(coremap[j].as->page_table, coremap[j].pt_index);
-                if (!coremap[k].status && (coremap[i].ref_count <= 1)) { // Found a free page
-                    // Copy page
-                    memmove((void *)PADDR_TO_KVADDR(k << PAGE_SHIFT), (const void *)PADDR_TO_KVADDR(j << PAGE_SHIFT), PAGE_SIZE);
-                    // Update pte to reflect
-                    kprintf("j: %d, cow:%d\n", j, e->cow);
-                    e->pframe = k;
-                    // Update coremap
-                    coremap[k] = coremap[j];
-                    // We need to flush TLB later
-                    break;
-                }
-            }
-            */
         }
         if (j == i) {
             coremap[j].status = 1;
@@ -300,7 +284,7 @@ coremap_page_to_evict(void)
     // Right now we just return a random page TODO: Change this to be better such as aging
     unsigned int i, count = 0;
     for (i = 0; i < page_count; i++) {
-        if (!coremap[i].kernel) { // Have to be not a kernel page, bad things might happen
+        if (!coremap[i].kernel && (coremap[i].ref_count == 1)) { // Have to be not a kernel page, bad things might happen
             count++;
         }
     }
@@ -308,7 +292,7 @@ coremap_page_to_evict(void)
     unsigned int index = random() % count;
     count = 0;
     for (i = 0; i < page_count; i++) {
-        if (!coremap[i].kernel) { // Have to be not a kernel page, bad things might happen
+        if (!coremap[i].kernel && (coremap[i].ref_count == 1)) { // Have to be not a kernel page, bad things might happen
             if (index == count) {
                 assert(coremap[i].status == 1);
                 assert(coremap[i].kernel == 0);
@@ -329,7 +313,7 @@ coremap_page_to_evict_avoidance(unsigned int pframe)
     // Right now we just return a random page TODO: Change this to be better such as aging
     unsigned int i, count = 0;
     for (i = 0; i < page_count; i++) {
-        if (!coremap[i].kernel && (i != pframe)) { // Have to be not a kernel page, bad things might happen
+        if (!coremap[i].kernel && (i != pframe) && (coremap[i].ref_count == 1)) { // Have to be not a kernel page, bad things might happen
             count++;
         }
     }
@@ -337,7 +321,7 @@ coremap_page_to_evict_avoidance(unsigned int pframe)
     unsigned int index = random() % count;
     count = 0;
     for (i = 0; i < page_count; i++) {
-        if (!coremap[i].kernel && (i != pframe)) { // Have to be not a kernel page, bad things might happen
+        if (!coremap[i].kernel && (i != pframe) && (coremap[i].ref_count == 1)) { // Have to be not a kernel page, bad things might happen
             if (index == count) {
                 if (coremap[i].status != 1) {
                     coremap_stats(0, NULL);

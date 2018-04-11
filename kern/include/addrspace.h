@@ -15,7 +15,6 @@ struct page_table_entry {
     u_int32_t cow : 1; // 0 means that tlb entry should be dirty, 1 means that tlb should not be dirty(readonly)
     u_int32_t swapped : 1; // Indicates if this page is in memory or in swap file
     u_int32_t swap_file_frame : 16; // File frame for the page in swap
-    //u_int32_t swap_coremap_ref_count : 6; // When the page is swapped out the reference count is saved here
 };
 
 // This defines how each segment exist in the addrspace
